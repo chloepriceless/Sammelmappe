@@ -153,10 +153,19 @@ def load_image_for_ocr(path: Path) -> Image.Image:
     return img
 
 
-def load_pdf_first_page(path: Path) -> Image.Image:
-    """Render first page of a PDF to PIL for OCR. Lazy import — pdf2image needs poppler."""
+MAX_PDF_PAGES = 10
+
+
+def load_pdf_pages(path: Path, max_pages: int = MAX_PDF_PAGES) -> list[Image.Image]:
+    """Render up to ``max_pages`` pages of a PDF for OCR / QR scanning."""
     from pdf2image import convert_from_path
-    pages = convert_from_path(str(path), dpi=200, first_page=1, last_page=1)
+    pages = convert_from_path(str(path), dpi=200, first_page=1, last_page=max_pages)
+    return pages or []
+
+
+# Kept for callers that still want just the first page (e.g. thumbnail generator).
+def load_pdf_first_page(path: Path) -> Image.Image:
+    pages = load_pdf_pages(path, max_pages=1)
     if not pages:
         raise ValueError("PDF has no pages")
     return pages[0]
@@ -469,31 +478,44 @@ Wenn ein Feld nicht erkennbar ist, setze null. Antworte ausschließlich mit
 gültigem JSON, keine ```-Blöcke."""
 
 
-def run_claude_vision(image_bytes: bytes, media_type: str) -> ExtractedInvoice:
+def run_claude_vision(pages: list[tuple[bytes, str]]) -> ExtractedInvoice:
+    """Send N page images (bytes + media-type) in a single message to Claude.
+
+    Multi-page invoices commonly carry the line items on page 1 and the
+    Übertrag / Gesamtbetrag on page 2+; the model needs all pages to know the
+    real total. Anthropic supports multiple image blocks per user message.
+    """
     api_key = _runtime_api_key()
     if not api_key or Anthropic is None:
         raise RuntimeError("Claude Vision not configured (ANTHROPIC_API_KEY missing)")
+    if not pages:
+        raise RuntimeError("no pages to send")
 
     client = _anthropic_client(api_key)
-    b64 = base64.standard_b64encode(image_bytes).decode("ascii")
+    content: list[dict] = []
+    for image_bytes, media_type in pages:
+        b64 = base64.standard_b64encode(image_bytes).decode("ascii")
+        content.append({
+            "type": "image",
+            "source": {"type": "base64", "media_type": media_type, "data": b64},
+        })
+
+    prompt = CLAUDE_PROMPT
+    if len(pages) > 1:
+        prompt = (
+            f"Diese Rechnung hat {len(pages)} Seiten (in Reihenfolge oben angehängt). "
+            "Der Gesamtbetrag steht typischerweise auf der LETZTEN Seite (Übertrag-Logik). "
+            "Bitte alle Seiten betrachten bevor du antwortest.\n\n"
+            + CLAUDE_PROMPT
+        )
+    content.append({"type": "text", "text": prompt})
+
     resp = client.messages.create(
         model=_runtime_model(),
         max_tokens=512,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {"type": "base64", "media_type": media_type, "data": b64},
-                    },
-                    {"type": "text", "text": CLAUDE_PROMPT},
-                ],
-            }
-        ],
+        messages=[{"role": "user", "content": content}],
     )
     text = resp.content[0].text if resp.content else "{}"
-    # Defensive: strip leading/trailing junk so JSON parses
     text = text.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.MULTILINE).strip()
@@ -513,69 +535,102 @@ def run_claude_vision(image_bytes: bytes, media_type: str) -> ExtractedInvoice:
 
 # --- Public entrypoint ------------------------------------------------------
 
+def _prep_for_tesseract(img: Image.Image) -> Image.Image:
+    """Grayscale + contrast + sharpen + upscale for OCR."""
+    out = ImageOps.exif_transpose(img)
+    if out.mode != "RGB":
+        out = out.convert("RGB")
+    w, h = out.size
+    if max(w, h) < 1500:
+        scale = 1500 / max(w, h)
+        out = out.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+    out = ImageOps.grayscale(out)
+    out = ImageOps.autocontrast(out, cutoff=2)
+    out = out.filter(ImageFilter.SHARPEN)
+    return out
+
+
+def _load_all_pages(path: Path, mime: str) -> list[Image.Image]:
+    """Return all relevant pages as RGB PIL images.
+
+    For images: one entry. For PDFs: every page up to MAX_PDF_PAGES.
+    """
+    is_pdf = mime == "application/pdf" or path.suffix.lower() == ".pdf"
+    if is_pdf:
+        return load_pdf_pages(path)
+    img = Image.open(path)
+    img = ImageOps.exif_transpose(img)
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    return [img]
+
+
 def extract(path: Path, mime: str, force_claude: bool = False, skip_claude: bool = False) -> ExtractedInvoice:
     """Run the full pipeline. Always returns an ExtractedInvoice (possibly empty).
 
-    ``force_claude``: skip Tesseract and go straight to Claude Vision (used when
-    the user explicitly hits "Neu erkennen" and expects the better result).
-    ``skip_claude``: only run Tesseract, never call Claude.
+    ``force_claude``: skip the fallback heuristic and always call Claude.
+    ``skip_claude``: never call Claude.
 
     Pipeline:
-      1. Scan for a TSE QR code (Kassenbeleg-V1). If found, the sum of the
-         per-VAT-rate gross amounts is the authoritative total — it's what the
-         cash register's TSE module signed.
-      2. Run Tesseract + heuristics (vendor / amount / date / number).
-      3. If confidence is low, fall back to Claude Vision (when API key is set).
-      4. If a TSE QR was found, its amount and date override whatever (2/3)
-         produced — they may still contribute vendor / invoice number.
+      0. Load every page (PDFs: up to MAX_PDF_PAGES).
+      1. Scan EVERY page for a TSE QR (Kassenbeleg-V1). First hit wins.
+      2. Run Tesseract on every page, concatenate text with page markers.
+         Vendor/date/number/amount heuristics run on the joined text — the
+         position-based scoring then naturally favours the last page (where
+         the Gesamtbetrag of a multi-page Rechnung lives).
+      3. If confidence is low or amount missing, send ALL pages to Claude in
+         a single message. The prompt explicitly tells the model the total
+         usually sits on the last page.
+      4. If a TSE QR was found, its signed amount + timestamp override what
+         OCR produced — vendor and invoice number are kept from OCR.
     """
-    is_pdf = mime == "application/pdf" or path.suffix.lower() == ".pdf"
+    pages = _load_all_pages(path, mime)
+    if not pages:
+        log.warning("No pages loaded from %s", path)
+        return ExtractedInvoice(engine="failed")
 
-    # Stage 0: TSE QR scan. Cheap and conclusive when it hits.
+    # Stage 1: TSE QR scan across all pages.
     tse: tse_qr.TseReceipt | None = None
-    try:
-        tse = tse_qr.scan_file_for_tse(path, mime)
-        if tse:
+    for page in pages:
+        try:
+            r = tse_qr.scan_image_for_tse(page)
+        except Exception:
+            log.exception("TSE scan crashed")
+            r = None
+        if r is not None:
+            tse = r
             log.info("TSE QR found: total=%.2f breakdown=%s", tse.total, tse.breakdown)
-    except Exception:
-        log.exception("TSE scan crashed")
+            break
 
-    # 1) Tesseract attempt
+    # Stage 2: Tesseract on every page.
     tesseract_result = ExtractedInvoice()
-    image_bytes: bytes | None = None
-    media_type_for_claude = "image/jpeg"
-
     try:
-        if is_pdf:
-            img = load_pdf_first_page(path)
-            tesseract_img = ImageOps.grayscale(img)
-            tesseract_img = ImageOps.autocontrast(tesseract_img, cutoff=2)
-            # Re-encode PDF first page as JPEG for Claude
-            buf = io.BytesIO()
-            img.convert("RGB").save(buf, "JPEG", quality=88)
-            image_bytes = buf.getvalue()
-            media_type_for_claude = "image/jpeg"
-        else:
-            tesseract_img = load_image_for_ocr(path)
-            # Read original bytes for Claude (better quality than re-encoded)
-            image_bytes = path.read_bytes()
-            media_type_for_claude = mime if mime in {"image/jpeg", "image/png", "image/gif", "image/webp"} else "image/jpeg"
-
-        text, mean_conf = run_tesseract(tesseract_img)
-        amount, sub_conf = extract_amount_from_text(text)
+        all_text_parts: list[str] = []
+        all_confs: list[float] = []
+        for i, page in enumerate(pages):
+            t_img = _prep_for_tesseract(page)
+            text, conf = run_tesseract(t_img)
+            if len(pages) > 1:
+                all_text_parts.append(f"\n=== Seite {i + 1} ===\n{text}")
+            else:
+                all_text_parts.append(text)
+            all_confs.append(conf)
+        joined = "\n".join(all_text_parts)
+        mean_conf = sum(all_confs) / len(all_confs) if all_confs else 0.0
+        amount, sub_conf = extract_amount_from_text(joined)
         tesseract_result = ExtractedInvoice(
-            vendor=extract_vendor(text),
+            vendor=extract_vendor(joined),
             amount=amount,
-            invoice_date=extract_date(text),
-            invoice_number=extract_invoice_number(text),
+            invoice_date=extract_date(joined),
+            invoice_number=extract_invoice_number(joined),
             confidence=round((mean_conf + sub_conf) / 2, 3),
             engine="tesseract",
-            raw_text=text,
+            raw_text=joined,
         )
     except Exception as e:
         log.warning("Tesseract pipeline failed for %s: %s", path, e)
 
-    # 2) Decide whether to fall back to Claude
+    # Stage 3: Claude fallback / forced call.
     has_key = bool(_runtime_api_key())
     threshold = _runtime_confidence_threshold()
     needs_fallback = (
@@ -589,10 +644,14 @@ def extract(path: Path, mime: str, force_claude: bool = False, skip_claude: bool
     )
 
     final = tesseract_result
-    if needs_fallback and image_bytes is not None:
+    if needs_fallback:
         try:
-            claude_result = run_claude_vision(image_bytes, media_type_for_claude)
-            # Merge: Claude wins on amount/vendor/date/invoice_number, keep raw text from Tesseract.
+            payloads: list[tuple[bytes, str]] = []
+            for page in pages:
+                buf = io.BytesIO()
+                page.convert("RGB").save(buf, "JPEG", quality=88)
+                payloads.append((buf.getvalue(), "image/jpeg"))
+            claude_result = run_claude_vision(payloads)
             final = ExtractedInvoice(
                 vendor=claude_result.vendor or tesseract_result.vendor,
                 amount=claude_result.amount if claude_result.amount is not None else tesseract_result.amount,
@@ -606,9 +665,7 @@ def extract(path: Path, mime: str, force_claude: bool = False, skip_claude: bool
         except Exception:
             log.exception("Claude Vision fallback failed; using Tesseract result")
 
-    # Stage 4: TSE override. The signed total is the truth — anything OCR found
-    # for the amount/date gets replaced. Vendor/invoice_number stay because the
-    # QR doesn't carry them.
+    # Stage 4: TSE override.
     if tse is not None:
         final = ExtractedInvoice(
             vendor=final.vendor,

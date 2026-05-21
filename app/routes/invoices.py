@@ -227,14 +227,32 @@ def delete_invoice(invoice_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{invoice_id}/file")
-def get_invoice_file(invoice_id: int, db: Session = Depends(get_db)):
+def get_invoice_file(
+    invoice_id: int,
+    download: bool = False,
+    db: Session = Depends(get_db),
+):
+    """Serve the original file.
+
+    Default is inline so <img> / browser PDF viewer can render it directly.
+    Pass ?download=true to get an ``attachment`` Content-Disposition for the
+    'Original herunterladen' link.
+    """
     inv = db.get(Invoice, invoice_id)
     if not inv:
         raise HTTPException(status_code=404)
     path = settings.invoices_dir / inv.filename
     if not path.exists():
         raise HTTPException(status_code=404, detail="Datei fehlt auf dem Server")
-    return FileResponse(path, media_type=inv.mime, filename=inv.original_name)
+    if download:
+        return FileResponse(path, media_type=inv.mime, filename=inv.original_name)
+    # Inline display — no filename= so FastAPI doesn't add attachment disposition.
+    safe_name = inv.original_name.replace('"', '')
+    return FileResponse(
+        path,
+        media_type=inv.mime,
+        headers={"Content-Disposition": f'inline; filename="{safe_name}"'},
+    )
 
 
 @router.get("/{invoice_id}/thumbnail")

@@ -329,7 +329,7 @@ function openEdit(inv) {
   $('#edit-number').value = inv.invoice_number || '';
   $('#edit-category').value = inv.category || '';
   $('#edit-notes').value = inv.notes || '';
-  $('#edit-download').href = `/api/invoices/${inv.id}/file`;
+  $('#edit-download').href = `/api/invoices/${inv.id}/file?download=true`;
 
   // OCR meta
   const meta = $('#edit-ocr-meta');
