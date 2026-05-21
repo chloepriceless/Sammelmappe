@@ -5,12 +5,11 @@
 
 Selfhosted, läuft als unprivileged LXC auf Proxmox (Ein-Befehl-Setup) oder per Docker. Optimiert für **iPhone**: Foto knipsen → Betrag automatisch erkannt → später am PC oder Handy alles auswählen, ZIP exportieren, fertig.
 
-**Installation in einem Befehl:**
+**Installation in einem Befehl** (community-scripts Style):
 
 ```bash
 # Auf der Proxmox-VE-Node (als root):
-git clone https://github.com/chloepriceless/Sammelmappe.git
-cd Sammelmappe && bash proxmox.sh
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/chloepriceless/Sammelmappe/main/proxmox.sh)"
 ```
 
 → legt LXC an, installiert alles, gibt dir am Ende die URL.
@@ -43,12 +42,10 @@ cd Sammelmappe && bash proxmox.sh
 Auf der **Proxmox-VE-Node** (nicht in einem Container), Shell als root:
 
 ```bash
-git clone https://github.com/chloepriceless/Sammelmappe.git
-cd Sammelmappe
-bash proxmox.sh
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/chloepriceless/Sammelmappe/main/proxmox.sh)"
 ```
 
-Das Script erledigt alles automatisch:
+Das war's. Du musst nichts vorher klonen, nichts installieren — das Script erledigt alles automatisch:
 
 1. Fragt **Default** oder **Advanced** (Default reicht in 95 % der Fälle).
 2. Lädt das Debian-12-LXC-Template, falls noch nicht da.

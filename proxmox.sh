@@ -1,23 +1,21 @@
 #!/usr/bin/env bash
 # Sammelmappe — Proxmox VE LXC builder & installer
 #
-# Run this script ON the Proxmox VE node (NOT inside a container):
+# One-liner (community-scripts style) — run this on the Proxmox VE node:
 #
-#   # Option A — direct from a clone on the node:
-#   git clone https://github.com/<your-fork>/Sammelmappe.git
-#   cd Sammelmappe
+#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/chloepriceless/Sammelmappe/main/proxmox.sh)"
+#
+# Or if you already cloned the repo:
+#
 #   bash proxmox.sh
-#
-#   # Option B — one-liner (after you publish the script):
-#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/<your-fork>/Sammelmappe/main/proxmox.sh)"
 #
 # What it does:
 #   1. Verifies it's running on a Proxmox host
 #   2. Asks Default (sensible presets) or Advanced (full control)
 #   3. Downloads the Debian 12 LXC template if needed
 #   4. Creates an unprivileged LXC, starts it
-#   5. Pushes the app code into the container (or git-clones it)
-#   6. Runs install.sh inside → Tesseract, Python venv, systemd, password setup page
+#   5. Clones the repo inside (or pushes local files if present)
+#   6. Runs install.sh inside → Tesseract, Python venv, systemd, password
 #   7. Prints the final IP + URL
 
 set -euo pipefail
@@ -265,18 +263,23 @@ wait_for_network() {
 # ---- push code & install ----------------------------------------------------
 
 push_code() {
-  local SRC; SRC="$(cd "$(dirname "$0")" && pwd)"
-  if [[ -f "$SRC/app/main.py" ]]; then
+  # If invoked via `bash -c "$(curl ...)"` there is no local checkout — fall back
+  # to git-clone inside the container. Otherwise tar local files in.
+  local SRC=""
+  if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
+    SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  fi
+
+  if [[ -n "$SRC" && -f "$SRC/app/main.py" ]]; then
     msg_info "Kopiere Code aus $SRC in den Container …"
     pct exec "$CT_ID" -- mkdir -p /opt/sammelmappe
-    # Tar over stdin — works regardless of which storage type the rootfs uses
     tar -C "$SRC" --exclude='.git' --exclude='.venv' --exclude='__pycache__' \
                   --exclude='.pytest_cache' --exclude='data' -czf - . \
       | pct exec "$CT_ID" -- tar -C /opt/sammelmappe -xzf -
     msg_ok "Code übertragen"
   else
-    msg_info "Lokale Quellen nicht gefunden — klone $REPO_URL im Container …"
-    pct exec "$CT_ID" -- bash -lc "apt-get -qq update && apt-get -y -qq install git ca-certificates"
+    msg_info "Klone $REPO_URL im Container …"
+    pct exec "$CT_ID" -- bash -lc "apt-get -qq update && apt-get -y -qq install git ca-certificates >/dev/null"
     pct exec "$CT_ID" -- bash -lc "rm -rf /opt/sammelmappe && git clone --depth=1 $REPO_URL /opt/sammelmappe"
     msg_ok "Repo geklont"
   fi
