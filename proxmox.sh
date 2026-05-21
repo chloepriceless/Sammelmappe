@@ -252,9 +252,15 @@ create_container() {
 }
 
 wait_for_network() {
+  # The Debian-12 LXC template doesn't ship curl or wget, so we test connectivity
+  # with libc (getent) and bash's built-in /dev/tcp.
   msg_info "Warte auf Netzwerk im Container …"
-  for i in {1..60}; do
-    if pct exec "$CT_ID" -- bash -lc 'getent hosts deb.debian.org >/dev/null 2>&1 && curl -fsS --max-time 5 https://deb.debian.org/debian/dists/stable/Release -o /dev/null'; then
+  for i in {1..30}; do
+    if pct exec "$CT_ID" -- bash -c '
+      getent hosts deb.debian.org >/dev/null 2>&1 || exit 1
+      exec 3<>/dev/tcp/deb.debian.org/443 || exit 1
+      exec 3>&-
+    ' >/dev/null 2>&1; then
       msg_ok "Netzwerk OK"
       return
     fi
