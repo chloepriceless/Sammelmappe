@@ -141,6 +141,22 @@ EOF
 
 # ---- systemd ----------------------------------------------------------------
 write_systemd() {
+  # Detect whether we're inside an LXC. Mount-namespace hardening (ProtectSystem,
+  # PrivateTmp, ReadWritePaths, etc.) requires CAP_SYS_ADMIN inside the namespace,
+  # which unprivileged LXCs don't have — the service would fail with
+  # "Failed at step NAMESPACE". User isolation + NoNewPrivileges still apply.
+  local IN_LXC=0
+  if command -v systemd-detect-virt >/dev/null && [[ "$(systemd-detect-virt -c 2>/dev/null)" == "lxc" ]]; then
+    IN_LXC=1
+  fi
+
+  local HARDENING
+  if [[ $IN_LXC -eq 1 ]]; then
+    HARDENING=$'# (LXC: mount-namespace hardening skipped — already isolated by the container)\nNoNewPrivileges=yes\nLockPersonality=yes\nRestrictRealtime=yes'
+  else
+    HARDENING=$'NoNewPrivileges=yes\nPrivateTmp=yes\nProtectSystem=strict\nProtectHome=yes\nReadWritePaths='"${APP_DIR}/data"$'\nProtectKernelTunables=yes\nProtectKernelModules=yes\nProtectControlGroups=yes\nLockPersonality=yes\nRestrictRealtime=yes'
+  fi
+
   cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
 [Unit]
 Description=Sammelmappe — Bau-Belege bündeln und gemeinsam einreichen
@@ -157,25 +173,14 @@ ExecStart=${APP_DIR}/.venv/bin/uvicorn app.main:app --host \${HOST} --port \${PO
 Restart=on-failure
 RestartSec=3
 
-# Hardening
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=${APP_DIR}/data
-ProtectKernelTunables=yes
-ProtectKernelModules=yes
-ProtectControlGroups=yes
-LockPersonality=yes
-MemoryDenyWriteExecute=no
-RestrictRealtime=yes
+${HARDENING}
 
 [Install]
 WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
   systemctl enable "${SERVICE_NAME}.service" >/dev/null
-  msg_ok "systemd-Service ${SERVICE_NAME}.service eingerichtet"
+  msg_ok "systemd-Service ${SERVICE_NAME}.service eingerichtet$([[ $IN_LXC -eq 1 ]] && echo ' (LXC mode)')"
 }
 
 # ---- start ------------------------------------------------------------------
