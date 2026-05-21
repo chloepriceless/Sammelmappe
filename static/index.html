@@ -216,6 +216,19 @@
     </div>
 
     <div class="modal-section">
+      <label class="toggle-row" for="set-prefer-claude">
+        <span class="toggle-text">
+          <b>Claude bevorzugt verwenden</b>
+          <small>Bei Aktivierung läuft Claude zuerst, Tesseract greift nur ein wenn Claude einen Fehler wirft (kein Key, Timeout, Guthaben aus). Bessere Erkennung bei höherer Genauigkeit; ca. 1 Cent pro Beleg.</small>
+        </span>
+        <span class="toggle-switch">
+          <input type="checkbox" id="set-prefer-claude">
+          <span class="toggle-slider"></span>
+        </span>
+      </label>
+    </div>
+
+    <div class="modal-section">
       <div class="modal-section-label">Erweitert</div>
       <div class="field-row">
         <div class="field"><label>Claude-Modell</label>

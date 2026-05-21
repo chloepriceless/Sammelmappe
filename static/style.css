@@ -593,6 +593,42 @@ a { color: var(--accent); text-decoration: none; }
 .status-row.warn  { color: var(--warning); }
 .status-row.err   { color: var(--danger); }
 
+/* iOS-style toggle row */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 12px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.toggle-row .toggle-text { flex: 1; min-width: 0; }
+.toggle-row .toggle-text b { display: block; font-size: 14px; font-weight: 600; }
+.toggle-row .toggle-text small { display: block; font-size: 12px; color: var(--text-muted); margin-top: 3px; line-height: 1.4; }
+.toggle-switch { position: relative; width: 50px; height: 30px; flex: 0 0 50px; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: var(--border);
+  border-radius: 30px;
+  transition: background-color .2s;
+}
+.toggle-slider::before {
+  content: "";
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: white;
+  transition: transform .2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,.2);
+}
+.toggle-switch input:checked + .toggle-slider { background: var(--accent); }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); }
+
 .hint {
   font-size: 13px;
   color: var(--text-muted);

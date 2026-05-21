@@ -15,12 +15,14 @@ class SettingsResponse(BaseModel):
     anthropic_api_key_source: str               # "db" | "env" | "none"
     claude_model: str
     ocr_confidence_threshold: float
+    ocr_prefer_claude: bool                     # if true: Claude is primary, Tesseract fallback
 
 
 class SettingsUpdate(BaseModel):
     anthropic_api_key: str | None = Field(default=None, description="leave None to keep current, '' to clear")
     claude_model: str | None = None
     ocr_confidence_threshold: float | None = None
+    ocr_prefer_claude: bool | None = None
 
 
 def _preview(key: str) -> str | None:
@@ -46,12 +48,14 @@ def _build_response() -> SettingsResponse:
         threshold = float(raw_threshold) if raw_threshold is not None else env_settings.ocr_confidence_threshold
     except (TypeError, ValueError):
         threshold = env_settings.ocr_confidence_threshold
+    prefer_claude = get_runtime("ocr_prefer_claude", "0") == "1"
     return SettingsResponse(
         anthropic_api_key_set=bool(effective_key),
         anthropic_api_key_preview=_preview(effective_key),
         anthropic_api_key_source=source,
         claude_model=model,
         ocr_confidence_threshold=threshold,
+        ocr_prefer_claude=prefer_claude,
     )
 
 
@@ -85,6 +89,9 @@ def update_settings(payload: SettingsUpdate):
         if not 0.0 <= t <= 1.0:
             raise HTTPException(status_code=400, detail="Confidence-Threshold muss zwischen 0 und 1 liegen.")
         set_runtime("ocr_confidence_threshold", str(t))
+
+    if payload.ocr_prefer_claude is not None:
+        set_runtime("ocr_prefer_claude", "1" if payload.ocr_prefer_claude else "0")
 
     return _build_response()
 

@@ -561,11 +561,32 @@ async function openSettings() {
     renderSettingsStatus(s);
     $('#set-model').value = s.claude_model || '';
     $('#set-threshold').value = s.ocr_confidence_threshold ?? 0.6;
+    $('#set-prefer-claude').checked = !!s.ocr_prefer_claude;
   } catch (e) {
     $('#set-status').textContent = `Fehler: ${e.message}`;
     $('#set-status').className = 'status-row err';
   }
 }
+
+// Auto-save the toggle when the user flips it — feels more natural than
+// having to click "Speichern" for what's a single switch.
+$('#set-prefer-claude').addEventListener('change', async (e) => {
+  const wanted = e.target.checked;
+  try {
+    const s = await api('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ocr_prefer_claude: wanted }),
+    });
+    e.target.checked = !!s.ocr_prefer_claude;
+    toast(s.ocr_prefer_claude
+      ? 'Claude wird jetzt bevorzugt verwendet'
+      : 'Standardmodus aktiv (Tesseract zuerst, Claude bei niedriger Konfidenz)', 'success', 3500);
+  } catch (err) {
+    e.target.checked = !wanted;
+    toast(`Konnte nicht speichern: ${err.message}`, 'error');
+  }
+});
 
 function renderSettingsStatus(s) {
   const el = $('#set-status');

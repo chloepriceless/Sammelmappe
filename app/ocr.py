@@ -68,6 +68,12 @@ def _runtime_confidence_threshold() -> float:
         return settings.ocr_confidence_threshold
 
 
+def _runtime_prefer_claude() -> bool:
+    """Whether new uploads should call Claude first and use Tesseract only as a
+    safety net. Default off — opt-in via the Settings UI."""
+    return get_runtime("ocr_prefer_claude", "0") == "1"
+
+
 # --- Patterns ---------------------------------------------------------------
 
 # Keywords are scored: higher score = stronger signal for "this is the total".
@@ -565,24 +571,66 @@ def _load_all_pages(path: Path, mime: str) -> list[Image.Image]:
     return [img]
 
 
+def _run_tesseract_on_pages(pages: list[Image.Image]) -> ExtractedInvoice:
+    """Tesseract over every page; joined text + heuristics."""
+    try:
+        all_text_parts: list[str] = []
+        all_confs: list[float] = []
+        for i, page in enumerate(pages):
+            t_img = _prep_for_tesseract(page)
+            text, conf = run_tesseract(t_img)
+            if len(pages) > 1:
+                all_text_parts.append(f"\n=== Seite {i + 1} ===\n{text}")
+            else:
+                all_text_parts.append(text)
+            all_confs.append(conf)
+        joined = "\n".join(all_text_parts)
+        mean_conf = sum(all_confs) / len(all_confs) if all_confs else 0.0
+        amount, sub_conf = extract_amount_from_text(joined)
+        return ExtractedInvoice(
+            vendor=extract_vendor(joined),
+            amount=amount,
+            invoice_date=extract_date(joined),
+            invoice_number=extract_invoice_number(joined),
+            confidence=round((mean_conf + sub_conf) / 2, 3),
+            engine="tesseract",
+            raw_text=joined,
+        )
+    except Exception as e:
+        log.warning("Tesseract pipeline failed: %s", e)
+        return ExtractedInvoice(engine="tesseract-failed")
+
+
+def _pages_to_claude_payloads(pages: list[Image.Image]) -> list[tuple[bytes, str]]:
+    out = []
+    for page in pages:
+        buf = io.BytesIO()
+        page.convert("RGB").save(buf, "JPEG", quality=88)
+        out.append((buf.getvalue(), "image/jpeg"))
+    return out
+
+
 def extract(path: Path, mime: str, force_claude: bool = False, skip_claude: bool = False) -> ExtractedInvoice:
     """Run the full pipeline. Always returns an ExtractedInvoice (possibly empty).
 
-    ``force_claude``: skip the fallback heuristic and always call Claude.
-    ``skip_claude``: never call Claude.
+    ``force_claude``: caller explicitly wants Claude (e.g. user clicked the
+    ✨ Claude button on a single invoice).
+    ``skip_claude``: caller explicitly wants Tesseract-only (e.g. 🔄 Tesseract
+    button or the user has disabled the Claude integration entirely).
 
-    Pipeline:
-      0. Load every page (PDFs: up to MAX_PDF_PAGES).
-      1. Scan EVERY page for a TSE QR (Kassenbeleg-V1). First hit wins.
-      2. Run Tesseract on every page, concatenate text with page markers.
-         Vendor/date/number/amount heuristics run on the joined text — the
-         position-based scoring then naturally favours the last page (where
-         the Gesamtbetrag of a multi-page Rechnung lives).
-      3. If confidence is low or amount missing, send ALL pages to Claude in
-         a single message. The prompt explicitly tells the model the total
-         usually sits on the last page.
-      4. If a TSE QR was found, its signed amount + timestamp override what
-         OCR produced — vendor and invoice number are kept from OCR.
+    Engine selection logic:
+
+      claude_primary = has_key AND not skip_claude AND
+                       (force_claude OR runtime setting `ocr_prefer_claude` ON)
+
+    If ``claude_primary`` is true → Claude runs first, Tesseract only triggers
+    when Claude raises (network error, billing, rate limit, etc.).
+
+    Otherwise the legacy hybrid runs: Tesseract first, Claude as quality
+    fallback when confidence < threshold or amount missing.
+
+    A TSE QR (Kassenbeleg) is scanned regardless and overrides the amount
+    + transaction date no matter which engine produced the rest.
     """
     pages = _load_all_pages(path, mime)
     if not pages:
@@ -602,70 +650,55 @@ def extract(path: Path, mime: str, force_claude: bool = False, skip_claude: bool
             log.info("TSE QR found: total=%.2f breakdown=%s", tse.total, tse.breakdown)
             break
 
-    # Stage 2: Tesseract on every page.
-    tesseract_result = ExtractedInvoice()
-    try:
-        all_text_parts: list[str] = []
-        all_confs: list[float] = []
-        for i, page in enumerate(pages):
-            t_img = _prep_for_tesseract(page)
-            text, conf = run_tesseract(t_img)
-            if len(pages) > 1:
-                all_text_parts.append(f"\n=== Seite {i + 1} ===\n{text}")
-            else:
-                all_text_parts.append(text)
-            all_confs.append(conf)
-        joined = "\n".join(all_text_parts)
-        mean_conf = sum(all_confs) / len(all_confs) if all_confs else 0.0
-        amount, sub_conf = extract_amount_from_text(joined)
-        tesseract_result = ExtractedInvoice(
-            vendor=extract_vendor(joined),
-            amount=amount,
-            invoice_date=extract_date(joined),
-            invoice_number=extract_invoice_number(joined),
-            confidence=round((mean_conf + sub_conf) / 2, 3),
-            engine="tesseract",
-            raw_text=joined,
-        )
-    except Exception as e:
-        log.warning("Tesseract pipeline failed for %s: %s", path, e)
-
-    # Stage 3: Claude fallback / forced call.
+    # Stage 2: pick engine order.
     has_key = bool(_runtime_api_key())
-    threshold = _runtime_confidence_threshold()
-    needs_fallback = (
-        not skip_claude
-        and has_key
-        and (
-            force_claude
-            or tesseract_result.amount is None
-            or tesseract_result.confidence < threshold
-        )
-    )
+    can_use_claude = has_key and not skip_claude
+    claude_primary = can_use_claude and (force_claude or _runtime_prefer_claude())
 
-    final = tesseract_result
-    if needs_fallback:
+    final: ExtractedInvoice | None = None
+
+    if claude_primary:
         try:
-            payloads: list[tuple[bytes, str]] = []
-            for page in pages:
-                buf = io.BytesIO()
-                page.convert("RGB").save(buf, "JPEG", quality=88)
-                payloads.append((buf.getvalue(), "image/jpeg"))
-            claude_result = run_claude_vision(payloads)
-            final = ExtractedInvoice(
-                vendor=claude_result.vendor or tesseract_result.vendor,
-                amount=claude_result.amount if claude_result.amount is not None else tesseract_result.amount,
-                currency=claude_result.currency or tesseract_result.currency,
-                invoice_date=claude_result.invoice_date or tesseract_result.invoice_date,
-                invoice_number=claude_result.invoice_number or tesseract_result.invoice_number,
-                confidence=claude_result.confidence,
-                engine="claude",
-                raw_text=tesseract_result.raw_text,
-            )
-        except Exception:
-            log.exception("Claude Vision fallback failed; using Tesseract result")
+            log.info("Claude as primary engine (prefer_claude=%s, force=%s)",
+                     _runtime_prefer_claude(), force_claude)
+            final = run_claude_vision(_pages_to_claude_payloads(pages))
+        except Exception as e:
+            log.warning("Claude primary call failed, falling back to Tesseract: %s", e)
 
-    # Stage 4: TSE override.
+    if final is None:
+        tesseract_result = _run_tesseract_on_pages(pages)
+
+        # Legacy quality fallback: only when Claude was NOT the primary engine.
+        threshold = _runtime_confidence_threshold()
+        wants_quality_fallback = (
+            can_use_claude
+            and not claude_primary
+            and (
+                tesseract_result.amount is None
+                or tesseract_result.confidence < threshold
+            )
+        )
+
+        if wants_quality_fallback:
+            try:
+                claude_result = run_claude_vision(_pages_to_claude_payloads(pages))
+                final = ExtractedInvoice(
+                    vendor=claude_result.vendor or tesseract_result.vendor,
+                    amount=claude_result.amount if claude_result.amount is not None else tesseract_result.amount,
+                    currency=claude_result.currency or tesseract_result.currency,
+                    invoice_date=claude_result.invoice_date or tesseract_result.invoice_date,
+                    invoice_number=claude_result.invoice_number or tesseract_result.invoice_number,
+                    confidence=claude_result.confidence,
+                    engine="claude",
+                    raw_text=tesseract_result.raw_text,
+                )
+            except Exception:
+                log.exception("Claude quality fallback failed; using Tesseract result")
+                final = tesseract_result
+        else:
+            final = tesseract_result
+
+    # Stage 3: TSE override.
     if tse is not None:
         final = ExtractedInvoice(
             vendor=final.vendor,
