@@ -57,7 +57,8 @@ preflight() {
 
 # ---- default values ---------------------------------------------------------
 APP_NAME="Sammelmappe"
-HOSTNAME="${HOSTNAME:-sammelmappe}"
+CT_HOSTNAME="${CT_HOSTNAME:-sammelmappe}"
+# ^ deliberately NOT named HOSTNAME — that's a bash built-in containing the host's name.
 CT_DISK="${CT_DISK:-4}"           # GB
 CT_RAM="${CT_RAM:-1024}"          # MiB
 CT_SWAP="${CT_SWAP:-512}"         # MiB
@@ -118,7 +119,7 @@ download_template() {
   [[ -n "$latest" ]] || die "Konnte Template '$TEMPLATE_NAME' nicht finden."
   msg_info "Lade Template: $latest"
   pveam download "$CT_TEMPLATE_STORAGE" "$latest"
-  TEMPLATE_FILE="$(find_template_file)"
+  TEMPLATE_FILE="$(find_template_file || true)"
   [[ -n "$TEMPLATE_FILE" ]] || die "Template-Download fehlgeschlagen."
   msg_ok "Template geladen"
 }
@@ -151,7 +152,7 @@ ask_settings() {
 
   if [[ "$mode" == "2" ]]; then
     CT_ID=$(ask "Container-ID"               "$CT_ID")
-    HOSTNAME=$(ask "Hostname"                "$HOSTNAME")
+    CT_HOSTNAME=$(ask "Hostname"                "$CT_HOSTNAME")
     CT_CORES=$(ask "CPU-Kerne"               "$CT_CORES")
     CT_RAM=$(ask "RAM (MiB)"                 "$CT_RAM")
     CT_SWAP=$(ask "Swap (MiB)"               "$CT_SWAP")
@@ -166,7 +167,7 @@ ask_settings() {
     CT_UNPRIVILEGED=$(ask "Unprivileged (1/0)" "$CT_UNPRIVILEGED")
     APP_PORT=$(ask "Port der Web-UI"         "$APP_PORT")
   else
-    HOSTNAME=$(ask "Hostname"   "$HOSTNAME")
+    CT_HOSTNAME=$(ask "Hostname"   "$CT_HOSTNAME")
     APP_PORT=$(ask "Port"       "$APP_PORT")
   fi
 
@@ -193,7 +194,7 @@ confirm_settings() {
   echo
   printf "  ${BOLD}Zusammenfassung${NC}\n"
   printf "    Container-ID:    ${CYAN}%s${NC}\n" "$CT_ID"
-  printf "    Hostname:        %s\n" "$HOSTNAME"
+  printf "    Hostname:        %s\n" "$CT_HOSTNAME"
   printf "    CPU/RAM/Disk:    %s Kerne / %s MiB / %s GiB\n" "$CT_CORES" "$CT_RAM" "$CT_DISK"
   printf "    Storage:         %s\n" "$CT_STORAGE"
   printf "    Netzwerk:        bridge=%s, ip=%s\n" "$CT_BRIDGE" "$CT_IP"
@@ -217,11 +218,13 @@ create_container() {
     [[ -n "$CT_GW" ]] && NET_OPT="${NET_OPT},gw=${CT_GW}"
   fi
 
-  # Generate a random root password (only used inside the CT, never displayed; user logs in via App)
-  local ROOTPW; ROOTPW="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)"
+  # Generate a random root password (only used inside the CT, never displayed; user logs in via App).
+  # Note: `tr -dc ... </dev/urandom | head -c N` is unsafe under `set -o pipefail` because
+  # tr gets SIGPIPE'd by head and exits non-zero. Use openssl instead.
+  local ROOTPW; ROOTPW="$(openssl rand -hex 16)"
 
   pct create "$CT_ID" "$TEMPLATE_FILE" \
-    --hostname "$HOSTNAME" \
+    --hostname "$CT_HOSTNAME" \
     --cores "$CT_CORES" \
     --memory "$CT_RAM" \
     --swap "$CT_SWAP" \
@@ -329,7 +332,7 @@ print_summary() {
 
   ${BOLD}${GREEN}Fertig.${NC}
 
-    Container:  ${CYAN}${CT_ID}${NC}  ($HOSTNAME)
+    Container:  ${CYAN}${CT_ID}${NC}  ($CT_HOSTNAME)
     URL:        ${CYAN}http://${IP}:${APP_PORT}/${NC}
 
   ${BOLD}Erste Schritte:${NC}
