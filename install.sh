@@ -102,6 +102,12 @@ fetch_code() {
   fi
   mkdir -p "$APP_DIR/data/invoices" "$APP_DIR/data/thumbnails" "$APP_DIR/data/exports"
   chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+
+  # Once we chown to the service user, `git pull` as root warns about "dubious
+  # ownership". Whitelist the directory globally so future updates just work.
+  if [[ -d "$APP_DIR/.git" ]]; then
+    git config --global --add safe.directory "$APP_DIR" 2>/dev/null || true
+  fi
   msg_ok "Code in $APP_DIR"
 }
 
