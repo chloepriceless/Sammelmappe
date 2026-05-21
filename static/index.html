@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#2c5fd9">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Sammelmappe">
+  <title>Sammelmappe</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app-shell">
+
+  <!-- Tab: Rechnungen -->
+  <section id="tab-invoices">
+    <header class="appbar">
+      <h1>Belege</h1>
+      <form action="/api/auth/logout" method="POST" style="margin:0">
+        <button class="iconbtn" type="submit" title="Abmelden" aria-label="Abmelden">⎋</button>
+      </form>
+    </header>
+    <div class="tab-content">
+      <div class="chips" role="tablist">
+        <button class="chip" data-filter="open" aria-pressed="true">Offen <span class="count" id="count-open">0</span></button>
+        <button class="chip" data-filter="submitted" aria-pressed="false">Eingereicht <span class="count" id="count-submitted">0</span></button>
+        <button class="chip" data-filter="all" aria-pressed="false">Alle</button>
+      </div>
+      <input type="search" class="search" id="search" placeholder="Suchen (Firma, Nummer, Notiz…)">
+      <div id="invoice-list" class="card-list"></div>
+      <div id="empty-state" class="empty hidden">
+        <h2>Noch keine Belege</h2>
+        <p>Tippe unten rechts auf 📷 und fotografiere deinen ersten Beleg.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tab: Eingereicht -->
+  <section id="tab-submissions" class="hidden">
+    <header class="appbar">
+      <h1>Eingereicht</h1>
+    </header>
+    <div class="tab-content">
+      <div id="submissions-list"></div>
+      <div id="submissions-empty" class="empty hidden">
+        <h2>Noch keine Einreichungen</h2>
+        <p>Sobald du Rechnungen exportierst, erscheinen sie hier.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tab: Statistik -->
+  <section id="tab-stats" class="hidden">
+    <header class="appbar">
+      <h1>Übersicht</h1>
+    </header>
+    <div class="tab-content">
+      <div class="stats-grid" id="stats-grid"></div>
+      <h3 style="margin:18px 0 8px;font-size:14px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">Kategorien</h3>
+      <div id="stats-categories" class="card-list"></div>
+    </div>
+  </section>
+
+</div>
+
+<!-- Selection bar (appears when items are selected) -->
+<div class="selbar" id="selbar">
+  <div class="info">
+    <div class="count"><span id="sel-count">0</span> ausgewählt</div>
+    <div class="sum" id="sel-sum">0,00 €</div>
+  </div>
+  <button class="secondary" id="sel-clear">Abwählen</button>
+  <button id="sel-export">Exportieren</button>
+</div>
+
+<!-- FAB camera -->
+<button class="fab" id="fab" title="Beleg erfassen" aria-label="Beleg erfassen">📷</button>
+<input type="file" id="capture-cam" accept="image/*,application/pdf" capture="environment" multiple class="hidden">
+<input type="file" id="capture-file" accept="image/*,application/pdf" multiple class="hidden">
+
+<!-- Bottom tab bar -->
+<nav class="tabbar">
+  <button data-tab="invoices" aria-current="page"><span class="icon">📋</span>Belege</button>
+  <button data-tab="submissions"><span class="icon">📤</span>Eingereicht</button>
+  <button data-tab="stats"><span class="icon">📊</span>Übersicht</button>
+</nav>
+
+<!-- Edit modal -->
+<div class="modal-backdrop" id="modal-edit">
+  <div class="modal">
+    <div class="grabber"></div>
+    <h2>Beleg bearbeiten</h2>
+    <img id="edit-preview" class="preview-img" alt="" src="">
+    <div class="field"><label>Rechnungssteller</label><input id="edit-vendor"></div>
+    <div class="field-row">
+      <div class="field"><label>Betrag (€)</label><input id="edit-amount" inputmode="decimal" type="text"></div>
+      <div class="field"><label>Datum</label><input id="edit-date" type="date"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Rechnungsnummer</label><input id="edit-number"></div>
+      <div class="field"><label>Kategorie</label>
+        <select id="edit-category">
+          <option value="">—</option>
+          <option>Material</option>
+          <option>Handwerker</option>
+          <option>Sanitär</option>
+          <option>Elektro</option>
+          <option>Heizung</option>
+          <option>Fenster/Türen</option>
+          <option>Boden</option>
+          <option>Dach</option>
+          <option>Garten/Außen</option>
+          <option>Planung/Architekt</option>
+          <option>Gebühren/Behörde</option>
+          <option>Sonstiges</option>
+        </select>
+      </div>
+    </div>
+    <div class="field"><label>Notiz</label><textarea id="edit-notes" placeholder="optional"></textarea></div>
+    <div class="modal-actions">
+      <button id="edit-delete" class="danger">Löschen</button>
+      <button id="edit-cancel">Abbrechen</button>
+      <button id="edit-save" class="primary">Speichern</button>
+    </div>
+    <div style="margin-top:14px;text-align:center">
+      <a id="edit-download" href="" target="_blank" style="font-size:13px">Original herunterladen</a>
+    </div>
+  </div>
+</div>
+
+<!-- Export modal -->
+<div class="modal-backdrop" id="modal-export">
+  <div class="modal">
+    <div class="grabber"></div>
+    <h2>Export für Sparda MyBaufi</h2>
+    <p style="color:var(--text-muted);font-size:14px;margin:0 0 10px;">
+      Es werden <span id="exp-count">0</span> Belege als ZIP gepackt — inkl. Übersicht (CSV).
+      Die Belege werden anschließend als „Eingereicht" markiert.
+    </p>
+    <div class="field"><label>Bezeichnung (optional)</label>
+      <input id="exp-label" placeholder="z. B. Tranche 3, Mai 2026">
+    </div>
+    <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin:6px 0 12px">
+      <input type="checkbox" id="exp-mark" checked> Nach dem Export als „Eingereicht" markieren
+    </label>
+    <div style="background:var(--bg-elev-2);padding:12px;border-radius:10px;margin-bottom:12px;">
+      <div style="font-size:12px;color:var(--text-muted)">Gesamtsumme</div>
+      <div style="font-size:24px;font-weight:800" id="exp-sum">0,00 €</div>
+    </div>
+    <div class="modal-actions">
+      <button id="exp-cancel">Abbrechen</button>
+      <button id="exp-confirm" class="primary">ZIP erstellen</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-stack" id="toasts"></div>
+
+<script src="/static/app.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>

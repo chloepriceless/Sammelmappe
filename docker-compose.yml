@@ -1,0 +1,24 @@
+services:
+  sammelmappe:
+    build: .
+    image: sammelmappe:latest
+    container_name: sammelmappe
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      DATA_DIR: /data
+      HOST: 0.0.0.0
+      PORT: 8080
+      # Generate with: python3 -c "import secrets;print(secrets.token_urlsafe(32))"
+      SECRET_KEY: "${SECRET_KEY:-change-me-now}"
+      SESSION_HOURS: "720"
+      TESSERACT_CMD: tesseract
+      TESSERACT_LANG: "deu+eng"
+      # Optional: enables Claude Vision fallback for low-confidence OCR
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      CLAUDE_MODEL: claude-haiku-4-5-20251001
+      OCR_CONFIDENCE_THRESHOLD: "0.6"
+      MAX_UPLOAD_MIB: "25"

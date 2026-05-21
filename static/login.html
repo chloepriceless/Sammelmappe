@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#2c5fd9">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <title>Sammelmappe — Login</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="auth-card">
+    <h1>Sammelmappe</h1>
+    <p>Bitte mit Passwort anmelden.</p>
+    <form class="auth-form" method="POST" action="/api/auth/login" id="login-form">
+      <input type="password" name="password" placeholder="Passwort" autocomplete="current-password" required minlength="6" autofocus>
+      <button type="submit">Anmelden</button>
+      <div class="error" id="err"></div>
+    </form>
+  </div>
+  <script>
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const err = document.getElementById('err');
+      err.textContent = '';
+      try {
+        const r = await fetch('/api/auth/login', { method: 'POST', body: fd, redirect: 'manual' });
+        if (r.status === 303 || r.type === 'opaqueredirect' || r.ok) { location.href = '/'; return; }
+        const data = await r.json().catch(() => ({}));
+        err.textContent = data.detail || 'Anmeldung fehlgeschlagen';
+      } catch (ex) {
+        err.textContent = 'Verbindungsfehler';
+      }
+    });
+  </script>
+</body>
+</html>
