@@ -12,6 +12,7 @@ from .db import init_db
 from .routes import auth as auth_routes
 from .routes import export as export_routes
 from .routes import invoices as invoice_routes
+from .routes import settings as settings_routes
 from .routes import stats as stats_routes
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s :: %(message)s")
@@ -26,6 +27,7 @@ app.include_router(auth_routes.router)
 app.include_router(invoice_routes.router)
 app.include_router(export_routes.router)
 app.include_router(stats_routes.router)
+app.include_router(settings_routes.router)
 
 
 def _is_authed(request: Request) -> bool:

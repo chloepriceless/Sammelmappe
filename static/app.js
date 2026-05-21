@@ -329,6 +329,17 @@ function openEdit(inv) {
   $('#edit-category').value = inv.category || '';
   $('#edit-notes').value = inv.notes || '';
   $('#edit-download').href = `/api/invoices/${inv.id}/file`;
+
+  // OCR meta
+  const meta = $('#edit-ocr-meta');
+  const engine = inv.ocr_engine || '—';
+  const conf = inv.ocr_confidence != null ? Math.round(inv.ocr_confidence * 100) + '%' : '—';
+  meta.innerHTML = `
+    <span>Engine: <strong>${escapeHtml(engine)}</strong></span>
+    <span>Konfidenz: <strong>${conf}</strong></span>
+    ${inv.manually_edited ? '<span><strong>manuell bearbeitet</strong></span>' : ''}
+  `;
+
   $('#modal-edit').classList.add('visible');
 }
 function closeEdit() {
@@ -372,7 +383,7 @@ $('#edit-save').addEventListener('click', async () => {
 $('#edit-delete').addEventListener('click', async () => {
   const id = state.currentEdit?.id;
   if (!id) return;
-  if (!confirm('Rechnung wirklich löschen?')) return;
+  if (!confirm('Beleg wirklich löschen? Die Datei wird vom Server entfernt.')) return;
   try {
     await api(`/api/invoices/${id}`, { method: 'DELETE' });
     toast('Gelöscht', 'success');
@@ -381,6 +392,169 @@ $('#edit-delete').addEventListener('click', async () => {
     loadInvoices();
   } catch (e) {
     toast(`Löschen fehlgeschlagen: ${e.message}`, 'error');
+  }
+});
+
+// --- Re-OCR --------------------------------------------------------------
+$('#edit-reocr').addEventListener('click', async () => {
+  const inv = state.currentEdit;
+  if (!inv) return;
+  const btn = $('#edit-reocr');
+  btn.disabled = true;
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner"></span> erkenne…';
+  try {
+    // Pick best engine: Claude if a key is configured, else Tesseract-only.
+    let engine = 'tesseract';
+    try {
+      const s = await api('/api/settings');
+      if (s.anthropic_api_key_set) engine = 'claude';
+    } catch (_) { /* ignore, fall through to tesseract */ }
+
+    const updated = await api(`/api/invoices/${inv.id}/reocr?engine=${engine}`, { method: 'POST' });
+    toast(`Neu erkannt (${updated.ocr_engine || engine}) — Betrag: ${fmtEUR(updated.amount)}`, 'success', 4500);
+    closeEdit();
+    await loadInvoices();
+    // Reopen the modal with updated data so the user can verify
+    const fresh = state.invoices.find(x => x.id === inv.id);
+    if (fresh) openEdit(fresh);
+  } catch (e) {
+    toast(`Re-OCR fehlgeschlagen: ${e.message}`, 'error', 5000);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+});
+
+// --- Detail viewer --------------------------------------------------------
+const viewer = $('#viewer');
+const viewerImg = $('#viewer-img');
+
+function openViewer(invoice) {
+  if (invoice.mime === 'application/pdf') {
+    // Browsers render PDFs natively in a new tab much better than any in-page viewer.
+    window.open(`/api/invoices/${invoice.id}/file`, '_blank');
+    return;
+  }
+  viewerImg.src = `/api/invoices/${invoice.id}/file`;
+  viewer.classList.add('visible');
+}
+function closeViewer() {
+  viewer.classList.remove('visible');
+  viewerImg.src = '';
+}
+$('#viewer-close').addEventListener('click', closeViewer);
+viewer.addEventListener('click', (e) => { if (e.target === viewer) closeViewer(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && viewer.classList.contains('visible')) closeViewer(); });
+
+$('#edit-view').addEventListener('click', () => {
+  if (state.currentEdit) openViewer(state.currentEdit);
+});
+$('#edit-preview').addEventListener('click', () => {
+  if (state.currentEdit) openViewer(state.currentEdit);
+});
+
+// --- Settings modal ------------------------------------------------------
+$('#settings-btn').addEventListener('click', () => openSettings());
+
+async function openSettings() {
+  $('#modal-settings').classList.add('visible');
+  $('#set-anthropic-key').value = '';
+  $('#set-status').className = 'status-row';
+  $('#set-status').textContent = 'Lade…';
+  try {
+    const s = await api('/api/settings');
+    renderSettingsStatus(s);
+    $('#set-model').value = s.claude_model || '';
+    $('#set-threshold').value = s.ocr_confidence_threshold ?? 0.6;
+  } catch (e) {
+    $('#set-status').textContent = `Fehler: ${e.message}`;
+    $('#set-status').className = 'status-row err';
+  }
+}
+
+function renderSettingsStatus(s) {
+  const el = $('#set-status');
+  if (!s.anthropic_api_key_set) {
+    el.textContent = 'Status: kein API Key — OCR läuft nur lokal mit Tesseract.';
+    el.className = 'status-row warn';
+  } else {
+    const where = s.anthropic_api_key_source === 'db' ? 'in der DB gespeichert' : 'aus .env geladen';
+    el.textContent = `Status: aktiv (${where}) — ${s.anthropic_api_key_preview || ''}`;
+    el.className = 'status-row ok';
+  }
+}
+
+function closeSettings() { $('#modal-settings').classList.remove('visible'); }
+$('#set-cancel').addEventListener('click', closeSettings);
+$('#modal-settings').addEventListener('click', (e) => { if (e.target.id === 'modal-settings') closeSettings(); });
+
+$('#set-clear').addEventListener('click', async () => {
+  if (!confirm('Anthropic API Key wirklich entfernen? Die OCR läuft danach wieder nur lokal.')) return;
+  try {
+    const s = await api('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ anthropic_api_key: '' }),
+    });
+    renderSettingsStatus(s);
+    toast('Key entfernt', 'success');
+  } catch (e) {
+    toast(`Fehler: ${e.message}`, 'error');
+  }
+});
+
+$('#set-test').addEventListener('click', async () => {
+  const btn = $('#set-test');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> teste…';
+  // If the user typed a new key but didn't save yet, save it first.
+  const newKey = $('#set-anthropic-key').value.trim();
+  try {
+    if (newKey) {
+      await api('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ anthropic_api_key: newKey }),
+      });
+      $('#set-anthropic-key').value = '';
+    }
+    const r = await api('/api/settings/test-claude', { method: 'POST' });
+    toast(`✓ Verbindung OK (Modell: ${r.model})`, 'success', 4500);
+    const s = await api('/api/settings');
+    renderSettingsStatus(s);
+  } catch (e) {
+    toast(`Test fehlgeschlagen: ${e.message}`, 'error', 5000);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+});
+
+$('#set-save').addEventListener('click', async () => {
+  const body = {};
+  const newKey = $('#set-anthropic-key').value.trim();
+  if (newKey) body.anthropic_api_key = newKey;
+  const model = $('#set-model').value.trim();
+  if (model) body.claude_model = model;
+  const t = parseFloat($('#set-threshold').value);
+  if (Number.isFinite(t)) body.ocr_confidence_threshold = t;
+  if (Object.keys(body).length === 0) {
+    closeSettings();
+    return;
+  }
+  try {
+    const s = await api('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    renderSettingsStatus(s);
+    $('#set-anthropic-key').value = '';
+    toast('Gespeichert', 'success');
+  } catch (e) {
+    toast(`Speichern fehlgeschlagen: ${e.message}`, 'error');
   }
 });
 

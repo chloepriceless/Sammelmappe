@@ -242,3 +242,49 @@ def get_invoice_thumbnail(invoice_id: int, db: Session = Depends(get_db)):
         except Exception:
             raise HTTPException(status_code=404)
     return FileResponse(thumb, media_type="image/jpeg")
+
+
+@router.post("/{invoice_id}/reocr")
+def reocr_invoice(
+    invoice_id: int,
+    engine: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Re-run OCR on an existing invoice.
+
+    Query params:
+      - engine=claude   → force Claude Vision (requires API key)
+      - engine=tesseract → skip Claude even if confidence is low
+      - (none)          → hybrid: Tesseract + Claude fallback
+    """
+    inv = db.get(Invoice, invoice_id)
+    if not inv:
+        raise HTTPException(status_code=404)
+
+    src = settings.invoices_dir / inv.filename
+    if not src.exists():
+        raise HTTPException(status_code=410, detail="Originaldatei nicht mehr vorhanden")
+
+    force_claude = engine == "claude"
+    skip_claude = engine == "tesseract"
+
+    try:
+        result = ocr.extract(src, inv.mime, force_claude=force_claude, skip_claude=skip_claude)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        log.exception("Re-OCR failed for invoice %s", invoice_id)
+        raise HTTPException(status_code=500, detail=f"OCR fehlgeschlagen: {e}")
+
+    inv.vendor = result.vendor
+    inv.amount = result.amount
+    inv.currency = result.currency or inv.currency
+    inv.invoice_date = result.invoice_date
+    inv.invoice_number = result.invoice_number
+    inv.ocr_engine = result.engine
+    inv.ocr_confidence = result.confidence
+    inv.ocr_raw_text = (result.raw_text or "")[:8000]
+    inv.manually_edited = False
+    db.commit()
+    db.refresh(inv)
+    return _invoice_to_dict(inv)

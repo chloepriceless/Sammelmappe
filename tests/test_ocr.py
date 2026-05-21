@@ -29,6 +29,20 @@ def test_parse_german_number(raw, expected):
     assert parse_german_number(raw) == expected
 
 
+def test_summe_at_bottom_wins_over_brutto_in_line_item():
+    """Regression: 'Brutto' often labels a per-line amount in tables; the
+    final 'Summe' at the bottom is the real total."""
+    text = """
+    Position   Beschreibung           Brutto
+    1          Material                  500,00
+    2          Arbeitsstunden          1.200,00
+
+    Summe:                            1.700,00
+    """
+    amount, _ = extract_amount_from_text(text)
+    assert amount == 1700.00
+
+
 def test_amount_extraction_prefers_gesamt_over_netto():
     text = """
     Mustermann Bau GmbH

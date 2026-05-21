@@ -19,9 +19,12 @@
   <section id="tab-invoices">
     <header class="appbar">
       <h1>Belege</h1>
-      <form action="/api/auth/logout" method="POST" style="margin:0">
-        <button class="iconbtn" type="submit" title="Abmelden" aria-label="Abmelden">⎋</button>
-      </form>
+      <div class="appbar-actions">
+        <button class="iconbtn" id="settings-btn" title="Einstellungen" aria-label="Einstellungen">⚙</button>
+        <form action="/api/auth/logout" method="POST" style="margin:0">
+          <button class="iconbtn" type="submit" title="Abmelden" aria-label="Abmelden">⎋</button>
+        </form>
+      </div>
     </header>
     <div class="tab-content">
       <div class="chips" role="tablist">
@@ -119,7 +122,8 @@
   <div class="modal">
     <div class="grabber"></div>
     <h2>Beleg bearbeiten</h2>
-    <img id="edit-preview" class="preview-img" alt="" src="">
+    <img id="edit-preview" class="preview-img tappable" alt="Tippen zum Vergrößern" src="">
+    <div class="ocr-meta" id="edit-ocr-meta"></div>
     <div class="field"><label>Rechnungssteller</label><input id="edit-vendor"></div>
     <div class="field-row">
       <div class="field"><label>Betrag (€)</label><input id="edit-amount" inputmode="decimal" type="text"></div>
@@ -146,13 +150,66 @@
       </div>
     </div>
     <div class="field"><label>Notiz</label><textarea id="edit-notes" placeholder="optional"></textarea></div>
+
     <div class="modal-actions">
-      <button id="edit-delete" class="danger">Löschen</button>
       <button id="edit-cancel">Abbrechen</button>
       <button id="edit-save" class="primary">Speichern</button>
     </div>
-    <div style="margin-top:14px;text-align:center">
-      <a id="edit-download" href="" target="_blank" style="font-size:13px">Original herunterladen</a>
+
+    <div class="modal-section">
+      <div class="modal-section-label">Aktionen</div>
+      <div class="action-row">
+        <button id="edit-view" class="ghost"><span>👁</span> Anzeigen</button>
+        <button id="edit-reocr" class="ghost"><span>🔄</span> Neu erkennen</button>
+      </div>
+      <div class="action-row">
+        <a id="edit-download" href="" target="_blank" class="ghost-link">📎 Original herunterladen</a>
+      </div>
+      <div class="action-row">
+        <button id="edit-delete" class="danger-row">🗑 Beleg löschen</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Fullscreen viewer -->
+<div class="viewer" id="viewer">
+  <button class="viewer-close" id="viewer-close" aria-label="Schließen">✕</button>
+  <img id="viewer-img" alt="">
+</div>
+
+<!-- Settings modal -->
+<div class="modal-backdrop" id="modal-settings">
+  <div class="modal">
+    <div class="grabber"></div>
+    <h2>Einstellungen</h2>
+
+    <div class="modal-section-label">OCR-Fallback (Claude Vision)</div>
+    <p class="hint">Bei niedriger Tesseract-Konfidenz oder fehlendem Betrag schickt die App das Foto an Claude. Wenn du den Key hier setzt, ist das System sofort aktiv (kein Restart nötig).</p>
+    <div class="field"><label>Anthropic API Key</label>
+      <input id="set-anthropic-key" type="password" placeholder="sk-ant-…" autocomplete="off">
+    </div>
+    <div class="status-row" id="set-status">—</div>
+    <div class="action-row">
+      <button id="set-test" class="ghost">Verbindung testen</button>
+      <button id="set-clear" class="ghost">Key entfernen</button>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-label">Erweitert</div>
+      <div class="field-row">
+        <div class="field"><label>Claude-Modell</label>
+          <input id="set-model" type="text" placeholder="claude-haiku-4-5-20251001">
+        </div>
+        <div class="field"><label>OCR-Threshold</label>
+          <input id="set-threshold" type="number" step="0.05" min="0" max="1">
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button id="set-cancel">Schließen</button>
+      <button id="set-save" class="primary">Speichern</button>
     </div>
   </div>
 </div>

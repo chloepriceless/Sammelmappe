@@ -21,6 +21,7 @@ import pytesseract
 from PIL import Image, ImageOps, ImageFilter
 
 from .config import settings
+from .runtime_config import get_runtime
 
 log = logging.getLogger(__name__)
 
@@ -33,22 +34,47 @@ except ImportError:  # pragma: no cover
 pytesseract.pytesseract.tesseract_cmd = settings.tesseract_cmd
 
 
+def _runtime_api_key() -> str:
+    return get_runtime("anthropic_api_key", settings.anthropic_api_key) or ""
+
+
+def _runtime_model() -> str:
+    return get_runtime("claude_model", settings.claude_model) or settings.claude_model
+
+
+def _runtime_confidence_threshold() -> float:
+    raw = get_runtime("ocr_confidence_threshold", str(settings.ocr_confidence_threshold))
+    try:
+        return float(raw) if raw is not None else settings.ocr_confidence_threshold
+    except (TypeError, ValueError):
+        return settings.ocr_confidence_threshold
+
+
 # --- Patterns ---------------------------------------------------------------
 
 # Keywords are scored: higher score = stronger signal for "this is the total".
+# Higher specificity outranks bare 'Brutto' which often labels per-line amounts.
 AMOUNT_KEYWORDS: list[tuple[str, int]] = [
-    (r"\bgesamt(?:betrag|summe)?\b", 10),
-    (r"\brechnungsbetrag\b", 10),
-    (r"\bendbetrag\b", 9),
-    (r"\bzu\s+zahlen(?:der\s+betrag)?\b", 9),
-    (r"\bzahlbetrag\b", 9),
-    (r"\bbrutto(?:betrag|summe)?\b", 7),
-    (r"\btotal\b", 6),
-    (r"\bsumme\b", 5),
+    (r"\bgesamtbetrag\b", 12),
+    (r"\bgesamtsumme\b", 12),
+    (r"\brechnungsbetrag\b", 12),
+    (r"\brechnungssumme\b", 12),
+    (r"\bendsumme\b", 12),
+    (r"\bendbetrag\b", 11),
+    (r"\bzu\s+zahlen(?:der\s+betrag)?\b", 11),
+    (r"\bzahlbetrag\b", 11),
+    (r"\bbruttobetrag\b", 8),
+    (r"\bbruttosumme\b", 8),
+    (r"\bsumme\s+brutto\b", 10),
+    (r"\bgesamt\b", 8),
+    (r"\bsumme\b", 7),                 # alone — often the actual total
+    (r"\btotal\b", 7),
+    (r"\bbrutto\b", 4),                # bare 'Brutto' is often a per-line label
     # Penalise things that look like a total but are partials
-    (r"\bnetto\b", -3),
-    (r"\bmwst\.?\b|\bust\.?\b|umsatzsteuer", -3),
-    (r"\bzwischensumme\b", -4),
+    (r"\bnetto\b", -4),
+    (r"\bmwst\.?\b|\bust\.?\b|umsatzsteuer", -4),
+    (r"\bzwischensumme\b", -6),
+    (r"\bzwischen\b", -3),
 ]
 
 # Matches "1.234,56", "1234,56", "1,234.56", "1234.56", with optional € or EUR before/after.
@@ -200,8 +226,10 @@ def extract_amount_from_text(text: str) -> tuple[float | None, float]:
                 score = float(kw_score)
                 # Prefer larger amounts (gross > net is common; total > line items)
                 score += min(amt / 100.0, 10.0)
-                # Prefer amounts later in the doc (totals are usually at the bottom)
-                score += (i / max(len(lines), 1)) * 3.0
+                # Prefer amounts later in the doc (totals are at the bottom).
+                # Higher weight — the position of "Brutto" on a line item vs.
+                # "Summe" at the end of the document should clearly favour the latter.
+                score += (i / max(len(lines), 1)) * 6.0
                 candidates.append((amt, score))
 
     if not candidates:
@@ -303,13 +331,14 @@ Wichtig:
 
 
 def run_claude_vision(image_bytes: bytes, media_type: str) -> ExtractedInvoice:
-    if not settings.anthropic_api_key or Anthropic is None:
+    api_key = _runtime_api_key()
+    if not api_key or Anthropic is None:
         raise RuntimeError("Claude Vision not configured (ANTHROPIC_API_KEY missing)")
 
-    client = Anthropic(api_key=settings.anthropic_api_key)
+    client = Anthropic(api_key=api_key)
     b64 = base64.standard_b64encode(image_bytes).decode("ascii")
     resp = client.messages.create(
-        model=settings.claude_model,
+        model=_runtime_model(),
         max_tokens=512,
         messages=[
             {
@@ -345,8 +374,13 @@ def run_claude_vision(image_bytes: bytes, media_type: str) -> ExtractedInvoice:
 
 # --- Public entrypoint ------------------------------------------------------
 
-def extract(path: Path, mime: str) -> ExtractedInvoice:
-    """Run the full pipeline. Always returns an ExtractedInvoice (possibly empty)."""
+def extract(path: Path, mime: str, force_claude: bool = False, skip_claude: bool = False) -> ExtractedInvoice:
+    """Run the full pipeline. Always returns an ExtractedInvoice (possibly empty).
+
+    ``force_claude``: skip Tesseract and go straight to Claude Vision (used when
+    the user explicitly hits "Neu erkennen" and expects the better result).
+    ``skip_claude``: only run Tesseract, never call Claude.
+    """
     is_pdf = mime == "application/pdf" or path.suffix.lower() == ".pdf"
 
     # 1) Tesseract attempt
@@ -385,11 +419,15 @@ def extract(path: Path, mime: str) -> ExtractedInvoice:
         log.warning("Tesseract pipeline failed for %s: %s", path, e)
 
     # 2) Decide whether to fall back to Claude
+    has_key = bool(_runtime_api_key())
+    threshold = _runtime_confidence_threshold()
     needs_fallback = (
-        settings.anthropic_api_key
+        not skip_claude
+        and has_key
         and (
-            tesseract_result.amount is None
-            or tesseract_result.confidence < settings.ocr_confidence_threshold
+            force_claude
+            or tesseract_result.amount is None
+            or tesseract_result.confidence < threshold
         )
     )
 

@@ -1,0 +1,111 @@
+"""Runtime-overridable settings exposed to the UI."""
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from ..auth import require_auth
+from ..config import settings as env_settings
+from ..runtime_config import get_runtime, set_runtime
+
+router = APIRouter(prefix="/api/settings", tags=["settings"], dependencies=[Depends(require_auth)])
+
+
+class SettingsResponse(BaseModel):
+    anthropic_api_key_set: bool
+    anthropic_api_key_preview: str | None       # e.g. "sk-ant-…1f2a"
+    anthropic_api_key_source: str               # "db" | "env" | "none"
+    claude_model: str
+    ocr_confidence_threshold: float
+
+
+class SettingsUpdate(BaseModel):
+    anthropic_api_key: str | None = Field(default=None, description="leave None to keep current, '' to clear")
+    claude_model: str | None = None
+    ocr_confidence_threshold: float | None = None
+
+
+def _preview(key: str) -> str | None:
+    if not key:
+        return None
+    if len(key) <= 12:
+        return key[:3] + "…"
+    return f"{key[:8]}…{key[-4:]}"
+
+
+def _build_response() -> SettingsResponse:
+    db_key = get_runtime("anthropic_api_key", None)
+    effective_key = db_key or env_settings.anthropic_api_key
+    if db_key:
+        source = "db"
+    elif env_settings.anthropic_api_key:
+        source = "env"
+    else:
+        source = "none"
+    model = get_runtime("claude_model", env_settings.claude_model) or env_settings.claude_model
+    raw_threshold = get_runtime("ocr_confidence_threshold", str(env_settings.ocr_confidence_threshold))
+    try:
+        threshold = float(raw_threshold) if raw_threshold is not None else env_settings.ocr_confidence_threshold
+    except (TypeError, ValueError):
+        threshold = env_settings.ocr_confidence_threshold
+    return SettingsResponse(
+        anthropic_api_key_set=bool(effective_key),
+        anthropic_api_key_preview=_preview(effective_key),
+        anthropic_api_key_source=source,
+        claude_model=model,
+        ocr_confidence_threshold=threshold,
+    )
+
+
+@router.get("")
+def get_settings():
+    return _build_response()
+
+
+@router.put("")
+def update_settings(payload: SettingsUpdate):
+    if payload.anthropic_api_key is not None:
+        key = payload.anthropic_api_key.strip()
+        if key == "":
+            set_runtime("anthropic_api_key", None)
+        else:
+            if not key.startswith("sk-ant-"):
+                raise HTTPException(status_code=400, detail="Anthropic API Keys beginnen mit 'sk-ant-'.")
+            if len(key) < 30:
+                raise HTTPException(status_code=400, detail="Key sieht unvollständig aus.")
+            set_runtime("anthropic_api_key", key)
+
+    if payload.claude_model is not None:
+        model = payload.claude_model.strip()
+        if model:
+            set_runtime("claude_model", model)
+        else:
+            set_runtime("claude_model", None)
+
+    if payload.ocr_confidence_threshold is not None:
+        t = payload.ocr_confidence_threshold
+        if not 0.0 <= t <= 1.0:
+            raise HTTPException(status_code=400, detail="Confidence-Threshold muss zwischen 0 und 1 liegen.")
+        set_runtime("ocr_confidence_threshold", str(t))
+
+    return _build_response()
+
+
+@router.post("/test-claude")
+def test_claude_connection():
+    """Tiny round-trip to verify the stored API key works."""
+    from ..ocr import _runtime_api_key, _runtime_model, Anthropic
+    api_key = _runtime_api_key()
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Kein API Key gesetzt.")
+    if Anthropic is None:
+        raise HTTPException(status_code=500, detail="anthropic-Modul nicht installiert.")
+    try:
+        client = Anthropic(api_key=api_key)
+        resp = client.messages.create(
+            model=_runtime_model(),
+            max_tokens=8,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+        text = resp.content[0].text if resp.content else ""
+        return {"ok": True, "model": _runtime_model(), "reply": text[:40]}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Anfrage fehlgeschlagen: {e}")
