@@ -308,7 +308,7 @@ preset_password() {
   [[ -n "$PASSWORD" ]] || { msg_info "Passwort wird beim ersten Browser-Aufruf gesetzt."; return; }
   msg_info "Setze Login-Passwort vorab im Container …"
   # Use the app's own auth.set_password through python so the hashing/storage is consistent.
-  pct exec "$CT_ID" -- bash -lc "cd /opt/sammelmappe && sudo -u sammelmappe ./.venv/bin/python -c '
+  pct exec "$CT_ID" -- bash -lc "cd /opt/sammelmappe && runuser -u sammelmappe -- ./.venv/bin/python -c '
 import os, sys
 os.environ[\"DATA_DIR\"]=\"/opt/sammelmappe/data\"
 from app.db import init_db

@@ -108,9 +108,9 @@ fetch_code() {
 # ---- venv -------------------------------------------------------------------
 setup_venv() {
   msg_info "Python venv + Dependencies installieren (das dauert kurz) …"
-  sudo -u "$APP_USER" python3 -m venv "$APP_DIR/.venv"
-  sudo -u "$APP_USER" "$APP_DIR/.venv/bin/pip" install --upgrade pip wheel >/dev/null
-  sudo -u "$APP_USER" "$APP_DIR/.venv/bin/pip" install -r "$APP_DIR/requirements.txt" >/dev/null
+  runuser -u "$APP_USER" -- python3 -m venv "$APP_DIR/.venv"
+  runuser -u "$APP_USER" -- "$APP_DIR/.venv/bin/pip" install --upgrade pip wheel >/dev/null
+  runuser -u "$APP_USER" -- "$APP_DIR/.venv/bin/pip" install -r "$APP_DIR/requirements.txt" >/dev/null
   msg_ok "venv bereit ($APP_DIR/.venv)"
 }
 
