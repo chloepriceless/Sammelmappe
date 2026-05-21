@@ -226,20 +226,36 @@ $('#search').addEventListener('input', (e) => {
 // --- Upload ---------------------------------------------------------------
 const fab = $('#fab');
 const camInput = $('#capture-cam');
+const libInput = $('#capture-library');
 const fileInput = $('#capture-file');
+const uploadSheet = $('#modal-upload');
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
 fab.addEventListener('click', () => {
-  // On iOS Safari, capture attribute opens camera directly.
-  // On desktop, no capture support → fall back to file picker.
-  if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-    // Use a small menu? Easier: just trigger camera; user can switch to library in iOS sheet.
-    camInput.click();
+  if (isMobile) {
+    uploadSheet.classList.add('visible');
   } else {
+    // Desktop: skip the sheet, just open the file picker (which already covers any source).
     fileInput.click();
   }
 });
 
+uploadSheet.addEventListener('click', (e) => {
+  if (e.target.id === 'modal-upload' || e.target.id === 'upload-cancel') {
+    uploadSheet.classList.remove('visible');
+    return;
+  }
+  const btn = e.target.closest('.sheet-btn');
+  if (!btn) return;
+  uploadSheet.classList.remove('visible');
+  const action = btn.dataset.action;
+  if (action === 'camera')  camInput.click();
+  if (action === 'library') libInput.click();
+  if (action === 'file')    fileInput.click();
+});
+
 camInput.addEventListener('change', (e) => handleFiles(e.target.files));
+libInput.addEventListener('change', (e) => handleFiles(e.target.files));
 fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
 
 async function handleFiles(filelist) {
@@ -264,6 +280,7 @@ async function handleFiles(filelist) {
   fab.classList.remove('busy');
   fab.innerHTML = '📷';
   camInput.value = '';
+  libInput.value = '';
   fileInput.value = '';
   if (okCount) {
     toast(`${okCount} Rechnung${okCount === 1 ? '' : 'en'} hochgeladen`, 'success');

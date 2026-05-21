@@ -76,10 +76,36 @@
   <button id="sel-export">Exportieren</button>
 </div>
 
-<!-- FAB camera -->
-<button class="fab" id="fab" title="Beleg erfassen" aria-label="Beleg erfassen">📷</button>
-<input type="file" id="capture-cam" accept="image/*,application/pdf" capture="environment" multiple class="hidden">
-<input type="file" id="capture-file" accept="image/*,application/pdf" multiple class="hidden">
+<!-- FAB capture -->
+<button class="fab" id="fab" title="Beleg erfassen" aria-label="Beleg erfassen">＋</button>
+<input type="file" id="capture-cam"     accept="image/*"                 capture="environment" multiple class="hidden">
+<input type="file" id="capture-library" accept="image/*"                                       multiple class="hidden">
+<input type="file" id="capture-file"    accept="image/*,application/pdf"                       multiple class="hidden">
+
+<!-- Upload action sheet -->
+<div class="modal-backdrop" id="modal-upload">
+  <div class="modal sheet">
+    <div class="grabber"></div>
+    <h2>Beleg hinzufügen</h2>
+    <div class="sheet-options">
+      <button class="sheet-btn" data-action="camera">
+        <span class="ico">📷</span>
+        <span class="lbl"><b>Foto aufnehmen</b><small>Kamera direkt öffnen</small></span>
+      </button>
+      <button class="sheet-btn" data-action="library">
+        <span class="ico">🖼️</span>
+        <span class="lbl"><b>Aus Mediathek</b><small>Bild aus der Fotos-App wählen</small></span>
+      </button>
+      <button class="sheet-btn" data-action="file">
+        <span class="ico">📄</span>
+        <span class="lbl"><b>Datei wählen</b><small>PDF aus Mail, iCloud, Downloads…</small></span>
+      </button>
+    </div>
+    <div class="modal-actions">
+      <button id="upload-cancel">Abbrechen</button>
+    </div>
+  </div>
+</div>
 
 <!-- Bottom tab bar -->
 <nav class="tabbar">

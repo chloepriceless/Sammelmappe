@@ -1,7 +1,7 @@
 // Minimal service worker — just enables PWA install on iOS.
 // We deliberately don't cache API or HTML to avoid stale data.
 
-const STATIC_CACHE = 'brs-static-v1';
+const STATIC_CACHE = 'brs-static-v2';
 const STATIC_FILES = [
   '/static/style.css',
   '/static/app.js',
