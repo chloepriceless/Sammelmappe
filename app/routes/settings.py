@@ -110,10 +110,17 @@ def test_claude_connection():
     except Exception as e:
         # Surface common failures clearly so the UI shows something actionable.
         msg = str(e)
-        if "ConnectTimeout" in msg or "ConnectError" in msg:
-            detail = f"Anthropic-API nicht erreichbar: {msg}. (Tipp: oft IPv6-Routing-Problem auf der Bridge.)"
-        elif "401" in msg or "authentication" in msg.lower():
-            detail = "API Key wurde von Anthropic abgelehnt (401)."
+        lower = msg.lower()
+        if "credit balance" in lower or "billing" in lower:
+            detail = "Anthropic-Guthaben aufgebraucht — auf console.anthropic.com → Plans & Billing aufladen."
+        elif "ConnectTimeout" in msg or "ConnectError" in msg or "timed out" in lower:
+            detail = "Anthropic-API nicht erreichbar (Timeout). Auf Proxmox-Bridges ist oft IPv6-Egress kaputt."
+        elif "401" in msg or "authentication" in lower or "invalid api" in lower or "permission_error" in lower:
+            detail = "API Key wurde von Anthropic abgelehnt (401). Key prüfen unter console.anthropic.com → Keys."
+        elif "rate" in lower and "limit" in lower:
+            detail = "Anthropic Rate-Limit erreicht — kurz warten und nochmal."
+        elif "model" in lower and "not_found" in lower:
+            detail = "Modellname nicht gültig. Standard ist claude-haiku-4-5-20251001."
         else:
             detail = f"Anfrage fehlgeschlagen: {msg}"
         raise HTTPException(status_code=502, detail=detail)
