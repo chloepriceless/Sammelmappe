@@ -494,6 +494,85 @@ a { color: var(--accent); text-decoration: none; }
   font-size: 14px;
   cursor: pointer;
 }
+.action-row button.ghost.claude {
+  background: linear-gradient(180deg, rgba(193,86,255,0.10), rgba(86,168,255,0.10));
+  border-color: rgba(140,120,255,0.4);
+}
+.action-row button.ghost:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.action-row button.primary-ghost {
+  flex: 1;
+  padding: 10px 12px;
+  background: var(--accent);
+  color: white;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* Diff panel for re-OCR preview */
+.diff-panel {
+  margin-top: 10px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+.diff-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+.diff-meta { font-size: 12px; color: var(--text-muted); }
+.diff-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.diff-row {
+  background: var(--bg-elev);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13.5px;
+  border: 1px solid transparent;
+}
+.diff-row.changed { border-color: rgba(44,95,217,0.4); }
+.diff-row .label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  margin-bottom: 2px;
+}
+.diff-row .vals {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 8px;
+  align-items: center;
+}
+.diff-row .old {
+  color: var(--text-muted);
+  text-decoration: line-through;
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+  text-align: right;
+}
+.diff-row .arrow { color: var(--text-muted); font-size: 14px; }
+.diff-row .new {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  word-break: break-word;
+}
+.diff-row.changed .new { color: var(--accent); }
+.diff-row .same { color: var(--text-muted); font-style: italic; grid-column: 1 / -1; text-align: center; }
 
 .status-row {
   font-size: 13px;

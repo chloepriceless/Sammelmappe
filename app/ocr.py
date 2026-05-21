@@ -303,23 +303,100 @@ def _parse_date(s: str) -> date | None:
     return None
 
 
+_LEGAL_FORM_RE = re.compile(
+    r"\b("
+    r"GmbH(?:\s*&\s*Co\.?\s*KG)?|"
+    r"AG|KGaA|KG|OHG|"
+    r"e\.?\s*K\.?(?:fr\.?)?|"
+    r"UG(?:\s*\(haftungsbeschr[äa]nkt\))?|"
+    r"GbR|mbH|e\.?\s*G\.?|"
+    r"Inh\.?|Inhaber"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_VENDOR_SKIP_RE = re.compile(
+    r"\b(?:rechnung|invoice|datum|rechnungsnummer|rechnungs-?nr|kunde|kunden-?nr|"
+    r"kunden-?nummer|seite\s*\d|page\s*\d|ust-?id|steuernummer|"
+    r"lieferant|empfänger|adressat|liefer-?\s*und\s+rechnungsanschrift)\b",
+    re.IGNORECASE,
+)
+
+_VENDOR_ADDRESS_RE = re.compile(
+    r"\bstr(?:\.|asse|aße)\b|\bweg\b|\bplatz\b|\ballee\b|\bring\b|"
+    r"\bgasse\b|^\d{5}\s|\bpostfach\b",
+    re.IGNORECASE,
+)
+
+
 def extract_vendor(text: str) -> str | None:
-    """Heuristic: the vendor name is usually in the first ~6 non-empty lines, before the
-    customer address block. Pick the longest line that's mostly letters and not an address keyword.
+    """Find the vendor / Rechnungssteller.
+
+    German invoices put the company name in the letterhead — usually one of the
+    first few lines. We score each candidate line and pick the best.
+
+    Strong signals (high score):
+      - contains a legal form (GmbH, AG, UG, KG, e.K., etc.)
+      - is near the very top
+      - is not an address line / not a label
+
+    Falls back to the previous first-plausible-line heuristic if nothing scores.
     """
-    skip = re.compile(r"rechnung|invoice|datum|kunde|kunden(?:nr|nummer)|seite|page", re.IGNORECASE)
-    addr_token = re.compile(r"\bstr(?:\.|asse)\b|\bweg\b|\bplatz\b|^\d{5}\s", re.IGNORECASE | re.MULTILINE)
-    candidates = []
-    for line in text.splitlines()[:12]:
-        ln = line.strip()
-        if 3 <= len(ln) <= 60 and not skip.search(ln) and not addr_token.search(ln):
-            letters = sum(1 for c in ln if c.isalpha())
-            if letters >= max(3, len(ln) * 0.5):
-                candidates.append(ln)
+    raw_lines = text.splitlines()[:20]
+    candidates: list[tuple[str, float]] = []  # (line, score)
+
+    for i, raw in enumerate(raw_lines):
+        ln = raw.strip()
+        if not (3 <= len(ln) <= 80):
+            continue
+        if _VENDOR_SKIP_RE.search(ln):
+            continue
+        if _VENDOR_ADDRESS_RE.search(ln):
+            continue
+
+        # Must look mostly like text, not just numbers/garbage
+        letters = sum(1 for c in ln if c.isalpha())
+        if letters < max(3, len(ln) * 0.5):
+            continue
+
+        score = 0.0
+
+        # Legal form is the strongest signal
+        if _LEGAL_FORM_RE.search(ln):
+            score += 10
+
+        # Capitalised words (most company names use them)
+        words = ln.split()
+        cap_ratio = sum(1 for w in words if w and w[0].isupper()) / max(len(words), 1)
+        score += cap_ratio * 4
+
+        # Top of the document is more likely the vendor letterhead
+        # (5 max bonus for line 0, decaying to 0 around line 15)
+        score += max(0.0, 5.0 - (i * 0.35))
+
+        # Penalise lines that look like a slogan or all-caps tagline
+        if ln.isupper() and len(ln) > 12:
+            score -= 1.5
+
+        # Penalise tiny noise lines (single short words)
+        if len(words) < 2 and not _LEGAL_FORM_RE.search(ln):
+            score -= 2
+
+        candidates.append((ln, score))
+
     if not candidates:
         return None
-    # Prefer the very first plausible line — usually the vendor letterhead.
-    return candidates[0]
+
+    candidates.sort(key=lambda x: x[1], reverse=True)
+
+    # If the top scorer is clearly weak (no legal form, low score), prefer the
+    # very first plausible line — matches the previous behaviour.
+    best, best_score = candidates[0]
+    if best_score < 3:
+        first_candidate = min(candidates, key=lambda x: text.splitlines().index(x[0])
+                              if x[0] in text.splitlines() else 999)
+        return first_candidate[0]
+    return best
 
 
 def extract_invoice_number(text: str) -> str | None:

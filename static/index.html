@@ -160,8 +160,28 @@
       <div class="modal-section-label">Aktionen</div>
       <div class="action-row">
         <button id="edit-view" class="ghost"><span>👁</span> Anzeigen</button>
-        <button id="edit-reocr" class="ghost"><span>🔄</span> Neu erkennen</button>
       </div>
+      <div class="modal-section-label" style="margin-top:14px">Neu erkennen (Vergleich)</div>
+      <div class="action-row">
+        <button id="edit-reocr-tesseract" class="ghost"><span>🔄</span> Tesseract</button>
+        <button id="edit-reocr-claude" class="ghost claude" data-needs-key="true"><span>✨</span> Claude</button>
+      </div>
+      <div class="hint" id="reocr-hint" style="margin-top:-4px"></div>
+
+      <!-- Preview / diff panel (hidden until a re-OCR runs) -->
+      <div id="reocr-diff" class="diff-panel hidden">
+        <div class="diff-header">
+          <strong id="diff-engine-label">—</strong>
+          <span class="diff-meta" id="diff-meta">—</span>
+        </div>
+        <div class="diff-rows" id="diff-rows"></div>
+        <div class="action-row">
+          <button id="diff-discard" class="ghost">Verwerfen</button>
+          <button id="diff-apply" class="primary-ghost">Übernehmen</button>
+        </div>
+      </div>
+
+      <div class="modal-section-label" style="margin-top:14px">Datei</div>
       <div class="action-row">
         <a id="edit-download" href="" target="_blank" class="ghost-link">📎 Original herunterladen</a>
       </div>

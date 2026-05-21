@@ -340,11 +340,16 @@ function openEdit(inv) {
     ${inv.manually_edited ? '<span><strong>manuell bearbeitet</strong></span>' : ''}
   `;
 
+  // Reset any leftover diff panel from a previous invoice
+  $('#reocr-diff').classList.add('hidden');
+
   $('#modal-edit').classList.add('visible');
+  refreshReocrButtons();
 }
 function closeEdit() {
   $('#modal-edit').classList.remove('visible');
   state.currentEdit = null;
+  pendingReocr = null;
 }
 $('#edit-cancel').addEventListener('click', closeEdit);
 $('#modal-edit').addEventListener('click', (e) => { if (e.target.id === 'modal-edit') closeEdit(); });
@@ -395,34 +400,120 @@ $('#edit-delete').addEventListener('click', async () => {
   }
 });
 
-// --- Re-OCR --------------------------------------------------------------
-$('#edit-reocr').addEventListener('click', async () => {
+// --- Re-OCR + comparison preview -----------------------------------------
+let pendingReocr = null;  // { engine, extracted, elapsed } awaiting Übernehmen / Verwerfen
+
+async function refreshReocrButtons() {
+  const claudeBtn = $('#edit-reocr-claude');
+  const hint = $('#reocr-hint');
+  try {
+    const s = await api('/api/settings');
+    if (s.anthropic_api_key_set) {
+      claudeBtn.disabled = false;
+      claudeBtn.title = '';
+      hint.textContent = '';
+    } else {
+      claudeBtn.disabled = true;
+      claudeBtn.title = 'Kein API Key gesetzt';
+      hint.textContent = 'Claude steht erst zur Verfügung wenn ein API Key in den Einstellungen gesetzt ist.';
+    }
+  } catch (_) { /* ignore */ }
+}
+
+async function runReocrPreview(engine, btn) {
   const inv = state.currentEdit;
   if (!inv) return;
-  const btn = $('#edit-reocr');
-  btn.disabled = true;
+  hideDiff();
   const orig = btn.innerHTML;
+  btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> erkenne…';
   try {
-    // Pick best engine: Claude if a key is configured, else Tesseract-only.
-    let engine = 'tesseract';
-    try {
-      const s = await api('/api/settings');
-      if (s.anthropic_api_key_set) engine = 'claude';
-    } catch (_) { /* ignore, fall through to tesseract */ }
-
-    const updated = await api(`/api/invoices/${inv.id}/reocr?engine=${engine}`, { method: 'POST' });
-    toast(`Neu erkannt (${updated.ocr_engine || engine}) — Betrag: ${fmtEUR(updated.amount)}`, 'success', 4500);
-    closeEdit();
-    await loadInvoices();
-    // Reopen the modal with updated data so the user can verify
-    const fresh = state.invoices.find(x => x.id === inv.id);
-    if (fresh) openEdit(fresh);
+    const r = await api(`/api/invoices/${inv.id}/reocr?engine=${engine}&preview=true`, { method: 'POST' });
+    pendingReocr = { engine, extracted: r.extracted, current: r.current };
+    showDiff(r.current, r.extracted);
   } catch (e) {
-    toast(`Re-OCR fehlgeschlagen: ${e.message}`, 'error', 5000);
+    toast(`Re-OCR fehlgeschlagen: ${e.message}`, 'error', 6000);
   } finally {
     btn.disabled = false;
     btn.innerHTML = orig;
+    refreshReocrButtons();
+  }
+}
+
+$('#edit-reocr-tesseract').addEventListener('click', (e) => runReocrPreview('tesseract', e.currentTarget));
+$('#edit-reocr-claude').addEventListener('click', (e) => runReocrPreview('claude', e.currentTarget));
+
+function showDiff(current, extracted) {
+  const panel = $('#reocr-diff');
+  $('#diff-engine-label').textContent = (extracted.ocr_engine === 'claude' ? '✨ Claude' : '🔄 Tesseract');
+  const conf = extracted.ocr_confidence != null ? Math.round(extracted.ocr_confidence * 100) + '%' : '—';
+  $('#diff-meta').textContent = `${extracted.elapsed_seconds ?? '?'}s · Konfidenz ${conf}`;
+
+  const rows = $('#diff-rows');
+  rows.innerHTML = '';
+  const fields = [
+    { key: 'vendor',         label: 'Rechnungssteller', fmt: v => v || '—' },
+    { key: 'amount',         label: 'Betrag',           fmt: v => fmtEUR(v) },
+    { key: 'invoice_date',   label: 'Datum',            fmt: v => v ? fmtDate(v) : '—' },
+    { key: 'invoice_number', label: 'Nummer',           fmt: v => v || '—' },
+  ];
+  for (const f of fields) {
+    const oldVal = current[f.key];
+    const newVal = extracted[f.key];
+    const changed = (oldVal ?? null) !== (newVal ?? null) &&
+                    !(oldVal == null && newVal == null);
+    const row = document.createElement('div');
+    row.className = 'diff-row' + (changed ? ' changed' : '');
+    if (changed) {
+      row.innerHTML = `
+        <div class="label">${f.label}</div>
+        <div class="vals">
+          <div class="old">${escapeHtml(f.fmt(oldVal))}</div>
+          <div class="arrow">→</div>
+          <div class="new">${escapeHtml(f.fmt(newVal))}</div>
+        </div>
+      `;
+    } else {
+      row.innerHTML = `
+        <div class="label">${f.label}</div>
+        <div class="vals"><div class="same">unverändert: ${escapeHtml(f.fmt(oldVal))}</div></div>
+      `;
+    }
+    rows.appendChild(row);
+  }
+  panel.classList.remove('hidden');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function hideDiff() {
+  $('#reocr-diff').classList.add('hidden');
+  pendingReocr = null;
+}
+
+$('#diff-discard').addEventListener('click', hideDiff);
+
+$('#diff-apply').addEventListener('click', async () => {
+  if (!pendingReocr || !state.currentEdit) return;
+  const inv = state.currentEdit;
+  const { extracted, engine } = pendingReocr;
+  const applyBtn = $('#diff-apply');
+  applyBtn.disabled = true;
+  applyBtn.innerHTML = '<span class="spinner"></span> übernehme…';
+  try {
+    // Re-run without preview to commit; this saves AND resets manually_edited so
+    // the OCR meta strip reflects the new engine + confidence honestly.
+    await api(`/api/invoices/${inv.id}/reocr?engine=${engine}`, { method: 'POST' });
+    toast(`${engine === 'claude' ? 'Claude' : 'Tesseract'}-Ergebnis übernommen`, 'success');
+    hideDiff();
+    closeEdit();
+    await loadInvoices();
+    const fresh = state.invoices.find(x => x.id === inv.id);
+    if (fresh) openEdit(fresh);
+  } catch (e) {
+    toast(`Übernehmen fehlgeschlagen: ${e.message}`, 'error');
+  } finally {
+    applyBtn.disabled = false;
+    applyBtn.innerHTML = 'Übernehmen';
   }
 });
 

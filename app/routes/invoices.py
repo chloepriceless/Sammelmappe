@@ -248,15 +248,19 @@ def get_invoice_thumbnail(invoice_id: int, db: Session = Depends(get_db)):
 def reocr_invoice(
     invoice_id: int,
     engine: str | None = None,
+    preview: bool = False,
     db: Session = Depends(get_db),
 ):
     """Re-run OCR on an existing invoice.
 
     Query params:
-      - engine=claude   → force Claude Vision (requires API key)
+      - engine=claude    → force Claude Vision (requires API key)
       - engine=tesseract → skip Claude even if confidence is low
-      - (none)          → hybrid: Tesseract + Claude fallback
+      - (none)           → hybrid: Tesseract + Claude fallback
+      - preview=true     → return extraction WITHOUT saving (for diff UI)
     """
+    import time
+
     inv = db.get(Invoice, invoice_id)
     if not inv:
         raise HTTPException(status_code=404)
@@ -268,6 +272,7 @@ def reocr_invoice(
     force_claude = engine == "claude"
     skip_claude = engine == "tesseract"
 
+    t0 = time.time()
     try:
         result = ocr.extract(src, inv.mime, force_claude=force_claude, skip_claude=skip_claude)
     except RuntimeError as e:
@@ -275,6 +280,25 @@ def reocr_invoice(
     except Exception as e:
         log.exception("Re-OCR failed for invoice %s", invoice_id)
         raise HTTPException(status_code=500, detail=f"OCR fehlgeschlagen: {e}")
+    elapsed = time.time() - t0
+
+    extracted = {
+        "vendor": result.vendor,
+        "amount": result.amount,
+        "currency": result.currency or "EUR",
+        "invoice_date": result.invoice_date.isoformat() if result.invoice_date else None,
+        "invoice_number": result.invoice_number,
+        "ocr_engine": result.engine,
+        "ocr_confidence": result.confidence,
+        "elapsed_seconds": round(elapsed, 2),
+    }
+
+    if preview:
+        return {
+            "preview": True,
+            "current": _invoice_to_dict(inv),
+            "extracted": extracted,
+        }
 
     inv.vendor = result.vendor
     inv.amount = result.amount
@@ -287,4 +311,4 @@ def reocr_invoice(
     inv.manually_edited = False
     db.commit()
     db.refresh(inv)
-    return _invoice_to_dict(inv)
+    return {"preview": False, "current": _invoice_to_dict(inv), "extracted": extracted}

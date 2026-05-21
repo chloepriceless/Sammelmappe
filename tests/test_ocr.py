@@ -99,3 +99,25 @@ def test_date_extraction_ignores_future_dates():
 def test_vendor_extraction_picks_first_real_line():
     text = "Mustermann Baustoffe GmbH\nHauptstraße 12\n12345 Berlin\nRechnung Nr. 4711"
     assert extract_vendor(text) == "Mustermann Baustoffe GmbH"
+
+
+def test_vendor_extraction_prefers_legal_form_line():
+    """Logos sometimes OCR to a tagline first — the legal-form line is the real vendor."""
+    text = """
+    Ihr Bauspezialist seit 1985
+    Schmidt & Partner Bau GmbH
+    Industriestraße 4
+    98765 Bremen
+    Rechnung
+    """
+    assert extract_vendor(text) == "Schmidt & Partner Bau GmbH"
+
+
+def test_vendor_extraction_handles_ug():
+    text = "BlitzBlank UG (haftungsbeschränkt)\nGartenweg 3\n12345 Köln"
+    assert extract_vendor(text) == "BlitzBlank UG (haftungsbeschränkt)"
+
+
+def test_vendor_extraction_skips_invoice_header():
+    text = "Rechnung\nMaler Müller e.K.\nMühlenstr. 9\n40545 Düsseldorf"
+    assert extract_vendor(text) == "Maler Müller e.K."
