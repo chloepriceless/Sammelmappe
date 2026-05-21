@@ -27,11 +27,28 @@ log = logging.getLogger(__name__)
 
 # Anthropic is optional — module-level import would crash setup if missing key.
 try:
+    import httpx
     from anthropic import Anthropic
 except ImportError:  # pragma: no cover
     Anthropic = None
+    httpx = None
 
 pytesseract.pytesseract.tesseract_cmd = settings.tesseract_cmd
+
+
+def _anthropic_client(api_key: str) -> "Anthropic":
+    """Build an Anthropic client with a sensible timeout and IPv4-only transport.
+
+    Some networks (notably default Proxmox bridges with broken IPv6 egress)
+    advertise an AAAA record for api.anthropic.com but can't actually reach it.
+    The Python SDK then hangs on its 600 s default timeout. Bind the socket to
+    0.0.0.0 so getaddrinfo only returns IPv4 candidates, and cap the timeout.
+    """
+    http_client = httpx.Client(
+        timeout=httpx.Timeout(connect=10.0, read=25.0, write=25.0, pool=10.0),
+        transport=httpx.HTTPTransport(local_address="0.0.0.0", retries=1),
+    )
+    return Anthropic(api_key=api_key, http_client=http_client, max_retries=1, timeout=30.0)
 
 
 def _runtime_api_key() -> str:
@@ -335,7 +352,7 @@ def run_claude_vision(image_bytes: bytes, media_type: str) -> ExtractedInvoice:
     if not api_key or Anthropic is None:
         raise RuntimeError("Claude Vision not configured (ANTHROPIC_API_KEY missing)")
 
-    client = Anthropic(api_key=api_key)
+    client = _anthropic_client(api_key)
     b64 = base64.standard_b64encode(image_bytes).decode("ascii")
     resp = client.messages.create(
         model=_runtime_model(),

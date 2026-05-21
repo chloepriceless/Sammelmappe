@@ -92,14 +92,14 @@ def update_settings(payload: SettingsUpdate):
 @router.post("/test-claude")
 def test_claude_connection():
     """Tiny round-trip to verify the stored API key works."""
-    from ..ocr import _runtime_api_key, _runtime_model, Anthropic
+    from ..ocr import _runtime_api_key, _runtime_model, _anthropic_client, Anthropic
     api_key = _runtime_api_key()
     if not api_key:
         raise HTTPException(status_code=400, detail="Kein API Key gesetzt.")
     if Anthropic is None:
         raise HTTPException(status_code=500, detail="anthropic-Modul nicht installiert.")
     try:
-        client = Anthropic(api_key=api_key)
+        client = _anthropic_client(api_key)
         resp = client.messages.create(
             model=_runtime_model(),
             max_tokens=8,
@@ -108,4 +108,12 @@ def test_claude_connection():
         text = resp.content[0].text if resp.content else ""
         return {"ok": True, "model": _runtime_model(), "reply": text[:40]}
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Anfrage fehlgeschlagen: {e}")
+        # Surface common failures clearly so the UI shows something actionable.
+        msg = str(e)
+        if "ConnectTimeout" in msg or "ConnectError" in msg:
+            detail = f"Anthropic-API nicht erreichbar: {msg}. (Tipp: oft IPv6-Routing-Problem auf der Bridge.)"
+        elif "401" in msg or "authentication" in msg.lower():
+            detail = "API Key wurde von Anthropic abgelehnt (401)."
+        else:
+            detail = f"Anfrage fehlgeschlagen: {msg}"
+        raise HTTPException(status_code=502, detail=detail)
