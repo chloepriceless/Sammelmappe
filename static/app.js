@@ -109,6 +109,7 @@ function renderCard(inv) {
     <h3 class="vendor">${escapeHtml(inv.vendor || inv.original_name || 'Unbekannt')}</h3>
     <div class="sub">
       <span>${fmtDate(inv.invoice_date)}</span>
+      ${inv.doc_type === 'Kassenbeleg' ? '<span class="kb">🧾 Kassenbeleg</span>' : ''}
       ${inv.category ? `<span>· ${escapeHtml(inv.category)}</span>` : ''}
       ${inv.invoice_number ? `<span>· #${escapeHtml(inv.invoice_number)}</span>` : ''}
     </div>
@@ -334,7 +335,9 @@ function openEdit(inv) {
   const meta = $('#edit-ocr-meta');
   const engine = inv.ocr_engine || '—';
   const conf = inv.ocr_confidence != null ? Math.round(inv.ocr_confidence * 100) + '%' : '—';
+  const isTse = engine.startsWith('qr+');
   meta.innerHTML = `
+    <span>Typ: <strong>${isTse ? '🧾 Kassenbeleg (TSE-QR)' : '📄 Rechnung'}</strong></span>
     <span>Engine: <strong>${escapeHtml(engine)}</strong></span>
     <span>Konfidenz: <strong>${conf}</strong></span>
     ${inv.manually_edited ? '<span><strong>manuell bearbeitet</strong></span>' : ''}

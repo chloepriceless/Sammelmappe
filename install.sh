@@ -63,11 +63,12 @@ install_system_deps() {
       python3 python3-venv python3-pip python3-dev build-essential \
       tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng \
       poppler-utils \
+      libzbar0 \
       libjpeg-dev zlib1g-dev libfreetype6-dev liblcms2-dev libwebp-dev libtiff-dev \
       libpq-dev \
       curl ca-certificates git \
     >/dev/null
-  msg_ok "Pakete installiert (Tesseract DEU/ENG, Poppler, Python 3)"
+  msg_ok "Pakete installiert (Tesseract DEU/ENG, Poppler, ZBar, Python 3)"
 }
 
 # ---- app user ---------------------------------------------------------------

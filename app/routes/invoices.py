@@ -26,6 +26,13 @@ ALLOWED_MIME = {
 }
 
 
+def _document_type(engine: str | None) -> str:
+    """Kassenbeleg if a TSE QR was used (engine prefix 'qr+'), else Rechnung."""
+    if engine and engine.startswith("qr+"):
+        return "Kassenbeleg"
+    return "Rechnung"
+
+
 def _invoice_to_dict(inv: Invoice) -> dict:
     return {
         "id": inv.id,
@@ -44,6 +51,7 @@ def _invoice_to_dict(inv: Invoice) -> dict:
         "manually_edited": inv.manually_edited,
         "created_at": inv.created_at.isoformat() if inv.created_at else None,
         "mime": inv.mime,
+        "doc_type": _document_type(inv.ocr_engine),
     }
 
 

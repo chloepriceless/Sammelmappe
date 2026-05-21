@@ -29,6 +29,40 @@ def test_parse_german_number(raw, expected):
     assert parse_german_number(raw) == expected
 
 
+def test_sum_vat_brutto_lines_returns_sum_when_two_brackets_present():
+    """German receipts often only list 'Brutto 19%: X'  'Brutto 7%: Y' without
+    an explicit total — adding them is the right answer."""
+    from app.ocr import sum_vat_brutto_lines
+    text = """
+    EDEKA Filiale 4711
+
+    Position             Brutto
+    Brot 7%               2,89
+    Wein 19%              7,99
+    ...
+    Brutto 19%:          75,33
+    Brutto 7%:            7,99
+    Bar:                 83,32
+    """
+    assert sum_vat_brutto_lines(text) == 83.32
+
+
+def test_sum_vat_brutto_lines_returns_none_for_single_bracket():
+    from app.ocr import sum_vat_brutto_lines
+    text = "Brutto 19%: 75,33\nNetto: 63,30"
+    assert sum_vat_brutto_lines(text) is None
+
+
+def test_extract_amount_prefers_vat_sum_when_available():
+    text = """
+    Brutto 19%: 75,33
+    Brutto 7%: 7,99
+    """
+    amount, conf = extract_amount_from_text(text)
+    assert amount == 83.32
+    assert conf > 0.5
+
+
 def test_summe_at_bottom_wins_over_brutto_in_line_item():
     """Regression: 'Brutto' often labels a per-line amount in tables; the
     final 'Summe' at the bottom is the real total."""
@@ -121,3 +155,50 @@ def test_vendor_extraction_handles_ug():
 def test_vendor_extraction_skips_invoice_header():
     text = "Rechnung\nMaler Müller e.K.\nMühlenstr. 9\n40545 Düsseldorf"
     assert extract_vendor(text) == "Maler Müller e.K."
+
+
+# --- TSE QR code parsing -----------------------------------------------------
+
+def test_parse_kassenbeleg_v1_sums_all_vat_brackets():
+    from app.tse_qr import parse_kassenbeleg_v1
+    payload = (
+        "V0;00345-00345;Kassenbeleg-V1;"
+        "Beleg^75.33_7.99_0.00_0.00_0.00^10.00:Bar_64.30:Unbar;"
+        "61;178;2025-05-21T12:30:33.000Z;2025-05-21T12:32:03.000Z;"
+        "ecdsa-plain-SHA256;..."
+    )
+    receipt = parse_kassenbeleg_v1(payload)
+    assert receipt is not None
+    assert receipt.total == 83.32
+    assert receipt.breakdown["19"] == 75.33
+    assert receipt.breakdown["7"] == 7.99
+    assert receipt.started_at is not None
+    assert receipt.started_at.year == 2025
+
+
+def test_parse_kassenbeleg_v1_rejects_non_tse_qr():
+    from app.tse_qr import parse_kassenbeleg_v1
+    # Looks like a wifi QR
+    assert parse_kassenbeleg_v1("WIFI:T:WPA;S:home;P:hunter2;;") is None
+    # Plain URL
+    assert parse_kassenbeleg_v1("https://example.com/receipt/123") is None
+    # Kassenbeleg keyword but malformed body
+    assert parse_kassenbeleg_v1("Kassenbeleg-V1;Beleg^not_a_number^") is None
+
+
+def test_parse_kassenbeleg_v1_zero_total_rejected():
+    from app.tse_qr import parse_kassenbeleg_v1
+    # A storno or void might emit a zero total — we don't want to override
+    # OCR with a 0 EUR ground truth.
+    assert parse_kassenbeleg_v1(
+        "Kassenbeleg-V1;Beleg^0.00_0.00_0.00_0.00_0.00^0.00:Bar;1;2;"
+    ) is None
+
+
+def test_parse_kassenbeleg_v1_only_zero_rate():
+    """Cash-out / tip-only entries occasionally have only the 0% bracket set."""
+    from app.tse_qr import parse_kassenbeleg_v1
+    payload = "Kassenbeleg-V1;Beleg^0.00_0.00_0.00_0.00_5.00^5.00:Bar;1;2;"
+    r = parse_kassenbeleg_v1(payload)
+    assert r is not None
+    assert r.total == 5.00

@@ -22,6 +22,7 @@ from PIL import Image, ImageOps, ImageFilter
 
 from .config import settings
 from .runtime_config import get_runtime
+from . import tse_qr
 
 log = logging.getLogger(__name__)
 
@@ -214,11 +215,49 @@ def run_tesseract(img: Image.Image) -> tuple[str, float]:
     return text, mean_conf
 
 
+_VAT_BRUTTO_LINE_RE = re.compile(
+    r"brutto\s*(?:betrag|summe)?\s*[:\s]*"
+    r"(?P<rate>19|7|10[.,]7|5[.,]5|0)\s*%[^0-9-]{0,30}"
+    r"(?P<num>\d{1,3}(?:[.\s]\d{3})*[,.]\d{2}|\d+[,.]\d{2})",
+    re.IGNORECASE,
+)
+
+
+def sum_vat_brutto_lines(text: str) -> float | None:
+    """If a receipt lists 'Brutto <rate>%: <amount>' for multiple VAT rates without
+    a printed total, sum them.
+
+    Many German receipts (and the legally required DSFinV-K QR layout) split the
+    gross amount by VAT rate. Adding those bracket-totals reproduces the actual
+    receipt total, which is what we want.
+
+    Returns the sum if 2+ distinct VAT brackets were found, else None.
+    """
+    found: dict[str, float] = {}
+    for m in _VAT_BRUTTO_LINE_RE.finditer(text):
+        rate = m.group("rate").replace(",", ".")
+        amount = parse_german_number(m.group("num"))
+        if amount is None or amount <= 0:
+            continue
+        # Keep first occurrence per rate (later might be a recap)
+        if rate not in found:
+            found[rate] = amount
+    if len(found) >= 2:
+        return round(sum(found.values()), 2)
+    return None
+
+
 def extract_amount_from_text(text: str) -> tuple[float | None, float]:
     """Score-based search for the gross amount.
 
     Returns (amount, sub_confidence).
     """
+    # First check: if the receipt splits gross by VAT rate, summing those is the
+    # most reliable signal we have without a TSE QR.
+    vat_sum = sum_vat_brutto_lines(text)
+    if vat_sum is not None:
+        return vat_sum, 0.85
+
     candidates: list[tuple[float, float]] = []  # (amount, score)
 
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
@@ -406,22 +445,28 @@ def extract_invoice_number(text: str) -> str | None:
 
 # --- Claude Vision fallback -------------------------------------------------
 
-CLAUDE_PROMPT = """Du bist ein Experte für deutsche Rechnungen.
-Extrahiere die folgenden Felder aus diesem Rechnungs-Bild und gib NUR JSON zurück, keine Erklärung:
+CLAUDE_PROMPT = """Du bist ein Experte für deutsche Rechnungen und Kassenbelege.
+Extrahiere die folgenden Felder und gib NUR JSON zurück, keine Erklärung:
 
 {
   "vendor": "<Name des Rechnungsstellers / Firma>",
-  "amount": <Brutto-Gesamtbetrag in EUR als Zahl mit Punkt als Dezimaltrenner>,
+  "amount": <Endbetrag in EUR als Zahl mit Punkt als Dezimaltrenner>,
   "currency": "EUR",
   "invoice_date": "<YYYY-MM-DD oder null>",
-  "invoice_number": "<Rechnungsnummer oder null>"
+  "invoice_number": "<Rechnungs-/Beleg-Nummer oder null>"
 }
 
-Wichtig:
-- amount ist IMMER der Brutto-Endbetrag (inkl. MwSt), nicht der Netto.
-- Wenn ein Feld nicht erkennbar ist, setze null.
-- Antworte ausschließlich mit gültigem JSON, keine ```-Blöcke.
-"""
+WICHTIG zum Betrag:
+- amount = der GESAMT-Endbetrag, den der Kunde tatsächlich zu zahlen hat (brutto inkl. MwSt).
+- Wenn der Beleg den Endbetrag explizit als "Summe", "Gesamt", "Gesamtbetrag",
+  "Rechnungssumme", "Zu zahlen", "Endbetrag" oder "Total" ausweist → nimm diesen Wert.
+- Wenn keine explizite Gesamtsumme da ist, aber mehrere Brutto-Beträge pro
+  MwSt-Satz aufgelistet sind (z.B. "Brutto 19%: 75,33"  "Brutto 7%: 7,99"),
+  dann **addiere alle Brutto-Beträge**. Das ist der Endbetrag.
+- NICHT der Netto-Betrag. NICHT der MwSt-Betrag. NICHT eine Zwischensumme einer Position.
+
+Wenn ein Feld nicht erkennbar ist, setze null. Antworte ausschließlich mit
+gültigem JSON, keine ```-Blöcke."""
 
 
 def run_claude_vision(image_bytes: bytes, media_type: str) -> ExtractedInvoice:
@@ -474,8 +519,26 @@ def extract(path: Path, mime: str, force_claude: bool = False, skip_claude: bool
     ``force_claude``: skip Tesseract and go straight to Claude Vision (used when
     the user explicitly hits "Neu erkennen" and expects the better result).
     ``skip_claude``: only run Tesseract, never call Claude.
+
+    Pipeline:
+      1. Scan for a TSE QR code (Kassenbeleg-V1). If found, the sum of the
+         per-VAT-rate gross amounts is the authoritative total — it's what the
+         cash register's TSE module signed.
+      2. Run Tesseract + heuristics (vendor / amount / date / number).
+      3. If confidence is low, fall back to Claude Vision (when API key is set).
+      4. If a TSE QR was found, its amount and date override whatever (2/3)
+         produced — they may still contribute vendor / invoice number.
     """
     is_pdf = mime == "application/pdf" or path.suffix.lower() == ".pdf"
+
+    # Stage 0: TSE QR scan. Cheap and conclusive when it hits.
+    tse: tse_qr.TseReceipt | None = None
+    try:
+        tse = tse_qr.scan_file_for_tse(path, mime)
+        if tse:
+            log.info("TSE QR found: total=%.2f breakdown=%s", tse.total, tse.breakdown)
+    except Exception:
+        log.exception("TSE scan crashed")
 
     # 1) Tesseract attempt
     tesseract_result = ExtractedInvoice()
@@ -525,11 +588,12 @@ def extract(path: Path, mime: str, force_claude: bool = False, skip_claude: bool
         )
     )
 
+    final = tesseract_result
     if needs_fallback and image_bytes is not None:
         try:
             claude_result = run_claude_vision(image_bytes, media_type_for_claude)
             # Merge: Claude wins on amount/vendor/date/invoice_number, keep raw text from Tesseract.
-            return ExtractedInvoice(
+            final = ExtractedInvoice(
                 vendor=claude_result.vendor or tesseract_result.vendor,
                 amount=claude_result.amount if claude_result.amount is not None else tesseract_result.amount,
                 currency=claude_result.currency or tesseract_result.currency,
@@ -540,6 +604,21 @@ def extract(path: Path, mime: str, force_claude: bool = False, skip_claude: bool
                 raw_text=tesseract_result.raw_text,
             )
         except Exception:
-            log.exception("Claude Vision fallback failed; returning tesseract result")
+            log.exception("Claude Vision fallback failed; using Tesseract result")
 
-    return tesseract_result
+    # Stage 4: TSE override. The signed total is the truth — anything OCR found
+    # for the amount/date gets replaced. Vendor/invoice_number stay because the
+    # QR doesn't carry them.
+    if tse is not None:
+        final = ExtractedInvoice(
+            vendor=final.vendor,
+            amount=tse.total,
+            currency="EUR",
+            invoice_date=tse.started_at.date() if tse.started_at else final.invoice_date,
+            invoice_number=final.invoice_number or tse.tx_number,
+            confidence=0.99,
+            engine=f"qr+{final.engine}",
+            raw_text=final.raw_text,
+        )
+
+    return final
