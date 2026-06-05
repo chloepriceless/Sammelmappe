@@ -201,6 +201,47 @@ def test_oversized_xml_is_rejected():
     assert parse_einvoice_xml(big) is None
 
 
+def test_cii_credit_note_typecode_is_refused():
+    """A CII Gutschrift keeps the CrossIndustryInvoice root and is only
+    distinguished by ExchangedDocument/TypeCode 381 — must not be imported."""
+    xml = b"""<rsm:CrossIndustryInvoice
+        xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"
+        xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100">
+      <rsm:ExchangedDocument>
+        <ram:ID>GS-2026-1</ram:ID>
+        <ram:TypeCode>381</ram:TypeCode>
+      </rsm:ExchangedDocument>
+      <rsm:SupplyChainTradeTransaction>
+        <ram:ApplicableHeaderTradeAgreement>
+          <ram:SellerTradeParty><ram:Name>Bau GmbH</ram:Name></ram:SellerTradeParty>
+        </ram:ApplicableHeaderTradeAgreement>
+        <ram:ApplicableHeaderTradeSettlement>
+          <ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+            <ram:GrandTotalAmount>500.00</ram:GrandTotalAmount>
+          </ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+        </ram:ApplicableHeaderTradeSettlement>
+      </rsm:SupplyChainTradeTransaction>
+    </rsm:CrossIndustryInvoice>"""
+    assert parse_einvoice_xml(xml) is None
+
+
+def test_cii_invoice_typecode_380_is_accepted():
+    xml = CII_XML.replace(
+        b"<ram:ID>RE-2026-00421</ram:ID>",
+        b"<ram:ID>RE-2026-00421</ram:ID><ram:TypeCode>380</ram:TypeCode>",
+    )
+    d = parse_einvoice_xml(xml)
+    assert d is not None and d.amount == 2147.24
+
+
+def test_ubl_invoice_with_credit_typecode_is_refused():
+    xml = UBL_XML.replace(
+        b"<cbc:ID>RE-2026-00999</cbc:ID>",
+        b"<cbc:InvoiceTypeCode>381</cbc:InvoiceTypeCode><cbc:ID>RE-2026-00999</cbc:ID>",
+    )
+    assert parse_einvoice_xml(xml) is None
+
+
 # --- Decompression-bomb defense (_decode_stream_bounded) ---------------------
 
 class _FakeStream:
@@ -296,6 +337,37 @@ def test_find_einvoice_standalone_xml(tmp_path):
     assert d is not None
     assert d.profile == "ubl"
     assert d.amount == 1190.00
+
+
+def test_extract_short_circuits_full_cii_xml(tmp_path):
+    from app import ocr
+    f = tmp_path / "full.xml"
+    f.write_bytes(CII_XML)
+    res = ocr.extract(f, "application/xml")
+    assert res.engine == "einvoice-cii"
+    assert res.amount == 2147.24
+
+
+def test_extract_gate_does_not_short_circuit_without_vendor(tmp_path):
+    """Amount + number but no vendor → not confident enough for 0.99; falls
+    through (for a standalone XML that means engine 'failed', no wrong import)."""
+    from app import ocr
+    xml = b"""<rsm:CrossIndustryInvoice
+        xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100"
+        xmlns:ram="urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100">
+      <rsm:ExchangedDocument><ram:ID>NOVENDOR-1</ram:ID></rsm:ExchangedDocument>
+      <rsm:SupplyChainTradeTransaction>
+        <ram:ApplicableHeaderTradeSettlement>
+          <ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+            <ram:GrandTotalAmount>100.00</ram:GrandTotalAmount>
+          </ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+        </ram:ApplicableHeaderTradeSettlement>
+      </rsm:SupplyChainTradeTransaction>
+    </rsm:CrossIndustryInvoice>"""
+    f = tmp_path / "novendor.xml"
+    f.write_bytes(xml)
+    res = ocr.extract(f, "application/xml")
+    assert not (res.engine or "").startswith("einvoice")
 
 
 def test_find_einvoice_plain_pdf_without_xml_returns_none(tmp_path):

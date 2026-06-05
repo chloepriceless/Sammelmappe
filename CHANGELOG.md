@@ -27,12 +27,13 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   mehr eager dekomprimiert, sondern über die `/EmbeddedFiles`-Struktur traversiert
   und (FlateDecode) mit hartem Output-Limit (12 MiB) inflatiert — verhindert OOM
   auf dem 1-GiB-LXC. Decoded- und Roh-Streamgrößen sind gedeckelt.
-- Mehrdeutige PDFs mit mehreren, widersprüchlichen E-Rechnung-XMLs → Fallback auf
-  OCR statt stiller Auswahl.
-- Gutschriften / CreditNotes werden NICHT automatisch als (positive) Rechnung
-  übernommen (Vorzeichen-Semantik) → Fallback OCR/manuell.
-- Short-Circuit nur bei konsistentem Ergebnis (positiver Betrag + Nummer oder
-  Vendor), sonst regulärer OCR-Pfad.
+- Mehrdeutige PDFs mit mehreren E-Rechnung-XMLs unterschiedlicher Identität
+  (Betrag / Nummer / Vendor) → Fallback auf OCR statt stiller Auswahl.
+- **Gutschriften** werden NICHT als positive Rechnung übernommen — erkannt sowohl
+  am UBL-`CreditNote`-Root als auch am Dokumenttyp-Code (UNTDID 1001, z.B. 381)
+  in CII (`ExchangedDocument/TypeCode`) und UBL (`InvoiceTypeCode`) → Fallback.
+- Short-Circuit nur bei vollständigem Ergebnis (positiver Betrag UND Nummer UND
+  Vendor — alle EN-16931-Pflichtfelder), sonst regulärer OCR-Pfad.
 
 ### Notes
 - Die E-Rechnungs-*Pflicht* gilt nur B2B; für private Bauherren ist das Feature ein

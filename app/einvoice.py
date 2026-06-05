@@ -51,6 +51,14 @@ _MAX_XML_BYTES = 12 * 1024 * 1024
 _MAX_RAW_STREAM_BYTES = 30 * 1024 * 1024
 _MAX_CANDIDATES = 8
 
+# UNTDID 1001 document-type codes that are credit notes (or credit-side
+# adjustments). EN 16931 expresses their amounts as *positive* values and conveys
+# the "this is a credit" meaning purely via this code — importing such a document
+# as a positive cost would be wrong, so we refuse it (→ OCR/manual). Applies to
+# both CII (ExchangedDocument/TypeCode) and UBL (cbc:InvoiceTypeCode); a CII
+# credit note keeps the CrossIndustryInvoice root, so the root check alone misses it.
+_CREDIT_NOTE_TYPE_CODES = {"81", "83", "261", "262", "296", "308", "381", "396", "532"}
+
 
 @dataclass
 class EInvoiceData:
@@ -141,8 +149,11 @@ def _parse_xml_date(raw: str | None) -> date | None:
 
 # --- CII (UN/CEFACT Cross Industry Invoice) ---------------------------------
 
-def _parse_cii(root) -> EInvoiceData:
+def _parse_cii(root) -> EInvoiceData | None:
     doc = _first_child(root, "ExchangedDocument")
+    type_code = _path_text(doc, "TypeCode")
+    if type_code in _CREDIT_NOTE_TYPE_CODES:
+        return None  # credit note / Gutschrift — don't import as a positive cost
     number = _path_text(doc, "ID")
     issue = _path(doc, "IssueDateTime", "DateTimeString")
     invoice_date = _parse_xml_date(_text(issue))
@@ -175,7 +186,10 @@ def _parse_cii(root) -> EInvoiceData:
 
 # --- UBL (OASIS Universal Business Language) --------------------------------
 
-def _parse_ubl(root) -> EInvoiceData:
+def _parse_ubl(root) -> EInvoiceData | None:
+    type_code = _path_text(root, "InvoiceTypeCode")
+    if type_code in _CREDIT_NOTE_TYPE_CODES:
+        return None  # credit-note type code even under an Invoice root → refuse
     # Invoice number is the root's *direct* ID child (not the IDs in sub-elements).
     number = _path_text(root, "ID")
     invoice_date = _parse_xml_date(_path_text(root, "IssueDate"))
@@ -233,6 +247,9 @@ def parse_einvoice_xml(xml_bytes: bytes) -> EInvoiceData | None:
         log.exception("e-invoice field extraction failed")
         return None
 
+    # None = recognised but refused (e.g. a credit-note type code).
+    if data is None:
+        return None
     # A bare root with no usable fields isn't worth short-circuiting OCR for.
     if data.amount is None and not data.invoice_number and not data.vendor:
         return None
@@ -344,10 +361,16 @@ def find_einvoice(path: Path, mime: str) -> EInvoiceData | None:
             parsed = [p for p in parsed if p is not None]
             if not parsed:
                 return None
-            amounts = {round(p.amount, 2) for p in parsed if p.amount is not None}
-            if len(amounts) > 1:
-                log.warning("conflicting e-invoice XMLs in %s (amounts=%s) — "
-                            "falling back to OCR", path, amounts)
+            # Bail to OCR if a PDF carries several e-invoice XMLs of differing
+            # identity (amount / number / vendor) — never silently trust one.
+            identities = {
+                (round(p.amount, 2) if p.amount is not None else None,
+                 p.invoice_number, p.vendor)
+                for p in parsed
+            }
+            if len(identities) > 1:
+                log.warning("conflicting e-invoice XMLs in %s (%d distinct) — "
+                            "falling back to OCR", path, len(identities))
                 return None
             return parsed[0]
     except Exception:
