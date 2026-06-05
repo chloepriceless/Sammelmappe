@@ -25,6 +25,7 @@ entity-expansion DoS (a real risk on the 1 GiB LXC this ships to).
 from __future__ import annotations
 
 import logging
+import zlib
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -43,8 +44,11 @@ _EINVOICE_ATTACHMENT_NAMES = {
     "cii.xml",
 }
 
-# Don't try to parse absurdly large attachments as invoice XML.
-_MAX_XML_BYTES = 8 * 1024 * 1024
+# Real e-invoice XML is well under 1 MiB; cap the *decoded* size to keep a
+# decompression bomb from exhausting RAM on the 1 GiB LXC this ships to.
+_MAX_XML_BYTES = 12 * 1024 * 1024
+# Raw embedded-stream cap (already bounded by the upload limit, this is a sanity net).
+_MAX_RAW_STREAM_BYTES = 30 * 1024 * 1024
 _MAX_CANDIDATES = 8
 
 
@@ -206,7 +210,7 @@ def _parse_ubl(root) -> EInvoiceData:
 def parse_einvoice_xml(xml_bytes: bytes) -> EInvoiceData | None:
     """Parse raw invoice XML. Returns None if it isn't a recognised e-invoice or
     if parsing is unsafe/fails (defusedxml rejects DTD entity expansion etc.)."""
-    if not xml_bytes:
+    if not xml_bytes or len(xml_bytes) > _MAX_XML_BYTES:
         return None
     try:
         root = _safe_fromstring(xml_bytes)
@@ -218,9 +222,12 @@ def parse_einvoice_xml(xml_bytes: bytes) -> EInvoiceData | None:
     try:
         if rl == "CrossIndustryInvoice":
             data = _parse_cii(root)
-        elif rl in ("Invoice", "CreditNote"):
+        elif rl == "Invoice":
             data = _parse_ubl(root)
         else:
+            # CreditNote (Gutschrift/Storno) carries a *positive* TaxInclusiveAmount
+            # but represents a credit — auto-importing it as a positive cost would
+            # be wrong. Leave it to OCR/manual handling. Other roots: not our format.
             return None
     except Exception:
         log.exception("e-invoice field extraction failed")
@@ -234,31 +241,85 @@ def parse_einvoice_xml(xml_bytes: bytes) -> EInvoiceData | None:
 
 # --- PDF embedded-XML extraction --------------------------------------------
 
+def _decode_stream_bounded(stream) -> bytes | None:
+    """Return an embedded file's bytes, bounded against decompression bombs.
+
+    We deliberately do NOT call pypdf's eager ``get_data()`` on a compressed
+    stream — that would inflate the whole thing into RAM *before* any size check.
+    Instead we read the raw stream and, for FlateDecode, inflate with a hard
+    output cap (``_MAX_XML_BYTES``). Anything we can't bound safely is skipped.
+    """
+    raw = getattr(stream, "_data", None)
+    if not isinstance(raw, (bytes, bytearray)):
+        return None
+    if len(raw) > _MAX_RAW_STREAM_BYTES:
+        return None
+
+    filt = stream.get("/Filter") if hasattr(stream, "get") else None
+    filt_s = str(filt) if filt is not None else ""
+
+    if filt is None:
+        # Not compressed — raw is the literal content.
+        return bytes(raw) if len(raw) <= _MAX_XML_BYTES else None
+
+    if "FlateDecode" in filt_s or "/Fl" in filt_s:
+        try:
+            d = zlib.decompressobj()
+            out = d.decompress(bytes(raw), _MAX_XML_BYTES + 1)
+        except zlib.error:
+            return None
+        # If there's more to inflate (capped) or output exceeds the cap → bomb.
+        if len(out) > _MAX_XML_BYTES or d.unconsumed_tail:
+            log.warning("embedded attachment exceeds %d B decoded — skipped "
+                        "(possible decompression bomb)", _MAX_XML_BYTES)
+            return None
+        return out
+
+    # Unknown/other filter (LZW, ASCIIHex, chains) — be conservative, skip.
+    return None
+
+
 def _embedded_xml_candidates(pdf_path: Path) -> list[bytes]:
     """Return embedded-file payloads from a PDF that plausibly contain invoice XML.
 
-    Known ZUGFeRD/Factur-X/XRechnung file names come first, then any other
-    ``.xml`` attachment as a fallback (some issuers use non-standard names).
+    Walks the PDF's ``/Names /EmbeddedFiles`` tree manually (instead of pypdf's
+    eager ``reader.attachments``) so only XML-named attachments are decoded, each
+    bounded against decompression bombs. Known ZUGFeRD/Factur-X/XRechnung names
+    come first, then any other ``.xml`` attachment as a fallback.
     """
     try:
         from pypdf import PdfReader
         reader = PdfReader(str(pdf_path))
-        attachments = reader.attachments  # dict: name -> list[bytes]
+        root = reader.trailer["/Root"]
+        names = root.get("/Names")
+        ef = names.get("/EmbeddedFiles") if names else None
+        arr = list(ef.get("/Names")) if (ef and ef.get("/Names")) else []
     except Exception:
-        log.debug("PDF has no readable attachments: %s", pdf_path)
+        log.debug("PDF has no readable embedded-file tree: %s", pdf_path)
         return []
 
     preferred: list[bytes] = []
     fallback: list[bytes] = []
-    for name, payloads in attachments.items():
-        low = (name or "").lower()
-        for payload in payloads or []:
-            if not payload or len(payload) > _MAX_XML_BYTES:
+    # arr is [name1, filespec1, name2, filespec2, ...]
+    for i in range(0, len(arr) - 1, 2):
+        if len(preferred) + len(fallback) >= _MAX_CANDIDATES:
+            break
+        try:
+            low = str(arr[i] or "").lower()
+            is_known = low in _EINVOICE_ATTACHMENT_NAMES
+            if not (is_known or low.endswith(".xml")):
                 continue
-            if low in _EINVOICE_ATTACHMENT_NAMES:
-                preferred.append(payload)
-            elif low.endswith(".xml"):
-                fallback.append(payload)
+            spec = arr[i + 1].get_object()
+            efd = spec.get("/EF") if hasattr(spec, "get") else None
+            stream_ref = (efd.get("/F") or efd.get("/UF")) if efd else None
+            if stream_ref is None:
+                continue
+            payload = _decode_stream_bounded(stream_ref.get_object())
+            if payload:
+                (preferred if is_known else fallback).append(payload)
+        except Exception:
+            log.debug("skipping unreadable embedded file", exc_info=True)
+            continue
 
     return (preferred + fallback)[:_MAX_CANDIDATES]
 
@@ -267,8 +328,9 @@ def find_einvoice(path: Path, mime: str) -> EInvoiceData | None:
     """Detect + parse a structured e-invoice from a PDF (embedded XML) or a
     standalone XML upload. Returns None when no e-invoice is found.
 
-    This is deliberately best-effort and never raises — callers fall back to the
-    OCR / Claude pipeline when it returns None.
+    Best-effort and never raises — callers fall back to the OCR / Claude pipeline
+    when it returns None. If a PDF carries multiple e-invoice XMLs whose totals
+    disagree, we bail to OCR rather than silently trusting one.
     """
     suffix = path.suffix.lower()
     is_pdf = mime == "application/pdf" or suffix == ".pdf"
@@ -278,10 +340,16 @@ def find_einvoice(path: Path, mime: str) -> EInvoiceData | None:
         if is_xml:
             return parse_einvoice_xml(path.read_bytes())
         if is_pdf:
-            for xml_bytes in _embedded_xml_candidates(path):
-                data = parse_einvoice_xml(xml_bytes)
-                if data is not None:
-                    return data
+            parsed = [parse_einvoice_xml(b) for b in _embedded_xml_candidates(path)]
+            parsed = [p for p in parsed if p is not None]
+            if not parsed:
+                return None
+            amounts = {round(p.amount, 2) for p in parsed if p.amount is not None}
+            if len(amounts) > 1:
+                log.warning("conflicting e-invoice XMLs in %s (amounts=%s) — "
+                            "falling back to OCR", path, amounts)
+                return None
+            return parsed[0]
     except Exception:
         log.exception("find_einvoice failed for %s", path)
     return None

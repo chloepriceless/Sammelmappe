@@ -89,3 +89,18 @@ Entity-Expansion-DoS real. defusedxml = minimale, korrekte Absicherung.
 ## Verifikation (R31)
 Oracle: synthetische ZUGFeRD-CII- + XRechnung-UBL-Fixtures mit bekannten Werten →
 Parser liefert exakt diese Werte; Tests grün; `extract()` short-circuitet (kein OCR-Pfad).
+Zusätzlich gegen REAL FlateDecode-komprimiertes pypdf-Attachment verifiziert
+(engine `einvoice-cii`, amount 2147.24 ohne OCR).
+
+## Security-Härtung (nach Codex-Review, 2026-06-05)
+Codex (GPT-5-codex, `codex exec`) gab im Refute-Review zunächst **BLOCK**. Behoben:
+1. **Dekompressions-Bombe (Must-Fix):** `reader.attachments` (eager-decode) ersetzt
+   durch manuelle `/Names /EmbeddedFiles`-Traversal + `_decode_stream_bounded()` —
+   FlateDecode wird mit `zlib.decompressobj().decompress(raw, _MAX_XML_BYTES+1)`
+   inflatiert; bei `unconsumed_tail`/Überlauf → skip. Roh-Stream-Cap 30 MiB,
+   Decoded-Cap 12 MiB. Nur XML-benannte Attachments werden überhaupt dekodiert.
+2. **Mehrere widersprüchliche XMLs:** `find_einvoice` parst alle Kandidaten; bei
+   ≠ Beträgen → None (OCR-Fallback) statt stiller Auswahl.
+3. **CreditNote:** nicht mehr als positive Rechnung übernommen → None.
+4. **Confidence-Gate:** Short-Circuit nur bei amount > 0 UND (Nummer ODER Vendor).
+5. **Decoded-Size-Guard** auch für standalone-XML (`parse_einvoice_xml`).

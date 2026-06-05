@@ -646,7 +646,11 @@ def extract(path: Path, mime: str, force_claude: bool = False, skip_claude: bool
         except Exception:
             log.exception("e-invoice detection crashed")
             einv = None
-        if einv is not None and einv.amount is not None:
+        # Only short-circuit on a confident, well-formed result: a positive gross
+        # total plus at least an invoice number or a vendor (a real e-invoice has
+        # both). Anything thinner falls through to OCR rather than claiming 0.99.
+        if (einv is not None and einv.amount is not None and einv.amount > 0
+                and (einv.invoice_number or einv.vendor)):
             log.info("E-invoice parsed (%s): total=%.2f vendor=%s",
                      einv.profile, einv.amount, einv.vendor)
             return ExtractedInvoice(

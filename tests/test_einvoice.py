@@ -179,7 +179,10 @@ def test_billion_laughs_entity_expansion_is_blocked():
     assert parse_einvoice_xml(malicious) is None
 
 
-def test_credit_note_root_is_parsed_as_ubl():
+def test_credit_note_is_not_auto_imported():
+    """A CreditNote (Gutschrift/Storno) carries a positive TaxInclusiveAmount but
+    represents a credit — importing it as a positive cost would be wrong, so we
+    return None and let OCR/manual handle it."""
     xml = b"""<ubl:CreditNote
         xmlns:ubl="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"
         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
@@ -190,11 +193,76 @@ def test_credit_note_root_is_parsed_as_ubl():
         <cbc:TaxInclusiveAmount>23.80</cbc:TaxInclusiveAmount>
       </cac:LegalMonetaryTotal>
     </ubl:CreditNote>"""
-    d = parse_einvoice_xml(xml)
-    assert d is not None
-    assert d.profile == "ubl"
-    assert d.invoice_number == "GS-7"
-    assert d.amount == 23.80
+    assert parse_einvoice_xml(xml) is None
+
+
+def test_oversized_xml_is_rejected():
+    big = b"<x>" + b"A" * (13 * 1024 * 1024) + b"</x>"
+    assert parse_einvoice_xml(big) is None
+
+
+# --- Decompression-bomb defense (_decode_stream_bounded) ---------------------
+
+class _FakeStream:
+    """Minimal stand-in for a pypdf stream object (raw bytes + /Filter)."""
+    def __init__(self, data, filt=None):
+        self._data = data
+        self._filt = filt
+
+    def get(self, key):
+        return self._filt if key == "/Filter" else None
+
+
+def test_decode_uncompressed_stream():
+    from app.einvoice import _decode_stream_bounded
+    assert _decode_stream_bounded(_FakeStream(b"<xml/>")) == b"<xml/>"
+
+
+def test_decode_flate_stream():
+    import zlib
+    from app.einvoice import _decode_stream_bounded
+    payload = b"<rsm:CrossIndustryInvoice/>"
+    s = _FakeStream(zlib.compress(payload), filt="/FlateDecode")
+    assert _decode_stream_bounded(s) == payload
+
+
+def test_decode_flate_bomb_is_rejected():
+    """A small compressed stream that inflates past the cap must be skipped, not
+    expanded into RAM."""
+    import zlib
+    from app.einvoice import _decode_stream_bounded
+    bomb = zlib.compress(b"\x00" * (50 * 1024 * 1024))  # ~50 MiB of zeros -> tiny
+    assert len(bomb) < 1_000_000  # the compressed form is small (that's the trap)
+    s = _FakeStream(bomb, filt="/FlateDecode")
+    assert _decode_stream_bounded(s) is None
+
+
+def test_decode_unknown_filter_is_skipped():
+    from app.einvoice import _decode_stream_bounded
+    assert _decode_stream_bounded(_FakeStream(b"data", filt="/LZWDecode")) is None
+
+
+def test_decode_missing_data_is_none():
+    from app.einvoice import _decode_stream_bounded
+
+    class NoData:
+        def get(self, key):
+            return None
+    assert _decode_stream_bounded(NoData()) is None
+
+
+def test_conflicting_einvoice_xmls_fall_back_to_ocr(tmp_path):
+    """Two e-invoice XMLs with different totals in one PDF -> bail to OCR."""
+    pypdf = pytest.importorskip("pypdf")
+    other_cii = CII_XML.replace(b"2147.24", b"999.00")
+    pdf = tmp_path / "ambiguous.pdf"
+    writer = pypdf.PdfWriter()
+    writer.add_blank_page(width=210, height=297)
+    writer.add_attachment("factur-x.xml", CII_XML)
+    writer.add_attachment("zugferd-invoice.xml", other_cii)
+    with open(pdf, "wb") as fh:
+        writer.write(fh)
+    assert find_einvoice(pdf, "application/pdf") is None
 
 
 # --- Integration: embedded XML in a real PDF (ZUGFeRD/Factur-X) --------------
