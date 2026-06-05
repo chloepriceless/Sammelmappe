@@ -14,7 +14,7 @@ from ..auth import require_auth
 from ..config import settings
 from ..db import get_db
 from ..models import Invoice
-from ..utils import sha256_file, slugify
+from ..utils import sha256_file, slugify, retention_until_date
 
 log = logging.getLogger(__name__)
 
@@ -56,7 +56,15 @@ def _invoice_to_dict(inv: Invoice) -> dict:
         "created_at": inv.created_at.isoformat() if inv.created_at else None,
         "mime": inv.mime,
         "doc_type": _document_type(inv.ocr_engine),
+        "retention_until": _retention_until(inv),
     }
+
+
+def _retention_until(inv: Invoice) -> str | None:
+    """ISO date until which the invoice should be kept (§ 14b UStG, 2 years).
+    Derived from the invoice date, falling back to the upload time."""
+    d = retention_until_date(inv.invoice_date or inv.created_at)
+    return d.isoformat() if d else None
 
 
 @router.post("")

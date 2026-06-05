@@ -1,6 +1,7 @@
 import hashlib
 import re
 import unicodedata
+from datetime import date, datetime
 from pathlib import Path
 
 
@@ -28,3 +29,19 @@ def format_eur(value: float | None) -> str:
     if value is None:
         return "—"
     return f"{value:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def retention_until_date(basis: date | datetime | None, years: int = 2) -> date | None:
+    """End of the legal retention period for an invoice.
+
+    § 14b Abs. 1 S. 5 UStG: a private recipient of a (taxable) work delivery or
+    service *relating to a property* must keep the invoice / payment proof for
+    **2 years**. The period starts at the END of the calendar year the document
+    was issued — so we keep until 31 Dec of ``issue_year + years``.
+
+    ``basis`` is the invoice date (preferred) or the upload timestamp as fallback.
+    Returns None if no basis is available.
+    """
+    if basis is None:
+        return None
+    return date(basis.year + years, 12, 31)

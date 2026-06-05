@@ -336,11 +336,18 @@ function openEdit(inv) {
   const meta = $('#edit-ocr-meta');
   const engine = inv.ocr_engine || '—';
   const conf = inv.ocr_confidence != null ? Math.round(inv.ocr_confidence * 100) + '%' : '—';
-  const isTse = engine.startsWith('qr+');
+  const docType = inv.doc_type || 'Rechnung';
+  const typeLabel = docType === 'Kassenbeleg' ? '🧾 Kassenbeleg (TSE-QR)'
+                  : docType === 'E-Rechnung' ? '📐 E-Rechnung (XML)'
+                  : '📄 Rechnung';
+  const retentionLine = inv.retention_until
+    ? `<span title="§ 14b UStG: Belege zu Leistungen an einem Grundstück 2 Jahre aufbewahren — auch Zahlungsbeleg, Bauvertrag und Abnahmeprotokoll. Keine Steuerberatung.">Aufbewahren bis: <strong>${fmtDate(inv.retention_until)}</strong> · §14b</span>`
+    : '';
   meta.innerHTML = `
-    <span>Typ: <strong>${isTse ? '🧾 Kassenbeleg (TSE-QR)' : '📄 Rechnung'}</strong></span>
+    <span>Typ: <strong>${typeLabel}</strong></span>
     <span>Engine: <strong>${escapeHtml(engine)}</strong></span>
     <span>Konfidenz: <strong>${conf}</strong></span>
+    ${retentionLine}
     ${inv.manually_edited ? '<span><strong>manuell bearbeitet</strong></span>' : ''}
   `;
 

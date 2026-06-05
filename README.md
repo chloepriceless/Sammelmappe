@@ -157,6 +157,24 @@ XXE / Entity-Expansion), denn Belege können von Dritten stammen.
 
 ---
 
+## Aufbewahrungsfrist (§ 14b UStG)
+
+Wer als **Privatperson** eine steuerpflichtige Leistung **im Zusammenhang mit einem
+Grundstück** bezieht (Bau, Sanierung, Handwerker am Haus), muss die Rechnung **2 Jahre
+aufbewahren** (§ 14b Abs. 1 S. 5 UStG) — bei Verstoß droht ein Bußgeld. Aufzubewahren
+sind nicht nur die Rechnung, sondern auch **Zahlungsbeleg, Bauvertrag und
+Abnahmeprotokoll**.
+
+Sammelmappe zeigt dir darum im Beleg-Detail ein **„Aufbewahren bis"-Datum**
+(Rechnungsjahr + 2 Jahre, gerechnet ab Jahresende). *Stand 06/2026, keine
+Steuerberatung — im Zweifel mit dem Steuerberater klären.*
+
+> **Tipp:** Da die App pro Beleg auch den Zahlungsbeleg-Hinweis trägt: lade neben
+> der Rechnung am besten gleich den Überweisungsbeleg mit hoch (eigener Eintrag oder
+> als Notiz).
+
+---
+
 ## Konfiguration (`.env`)
 
 | Variable                   | Default                          | Bedeutung                                                                |
