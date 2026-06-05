@@ -23,6 +23,7 @@ from PIL import Image, ImageOps, ImageFilter
 from .config import settings
 from .runtime_config import get_runtime
 from . import tse_qr
+from . import einvoice
 
 log = logging.getLogger(__name__)
 
@@ -631,7 +632,39 @@ def extract(path: Path, mime: str, force_claude: bool = False, skip_claude: bool
 
     A TSE QR (Kassenbeleg) is scanned regardless and overrides the amount
     + transaction date no matter which engine produced the rest.
+
+    Stage 0 (before any of the above): if the file is a structured e-invoice
+    (ZUGFeRD/Factur-X PDF with embedded XML, or a standalone XRechnung XML) we
+    parse that XML deterministically and short-circuit — the values are exact and
+    need no OCR/Claude call. Skipped when the caller explicitly forced Claude
+    (``force_claude``), so the ✨ Claude button still does what it says.
     """
+    # Stage 0: structured e-invoice XML (authoritative, deterministic).
+    if not force_claude:
+        try:
+            einv = einvoice.find_einvoice(path, mime)
+        except Exception:
+            log.exception("e-invoice detection crashed")
+            einv = None
+        if einv is not None and einv.amount is not None:
+            log.info("E-invoice parsed (%s): total=%.2f vendor=%s",
+                     einv.profile, einv.amount, einv.vendor)
+            return ExtractedInvoice(
+                vendor=einv.vendor,
+                amount=einv.amount,
+                currency=einv.currency or "EUR",
+                invoice_date=einv.invoice_date,
+                invoice_number=einv.invoice_number,
+                confidence=0.99,
+                engine=f"einvoice-{einv.profile}",
+                raw_text="",
+            )
+
+    # A standalone XML that wasn't a parseable e-invoice has no raster to OCR.
+    if mime in ("application/xml", "text/xml") or path.suffix.lower() == ".xml":
+        log.warning("XML upload was not a recognised e-invoice: %s", path)
+        return ExtractedInvoice(engine="failed")
+
     pages = _load_all_pages(path, mime)
     if not pages:
         log.warning("No pages loaded from %s", path)

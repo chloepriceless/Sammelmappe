@@ -110,6 +110,7 @@ function renderCard(inv) {
     <div class="sub">
       <span>${fmtDate(inv.invoice_date)}</span>
       ${inv.doc_type === 'Kassenbeleg' ? '<span class="kb">🧾 Kassenbeleg</span>' : ''}
+      ${inv.doc_type === 'E-Rechnung' ? '<span class="erech">📐 E-Rechnung</span>' : ''}
       ${inv.category ? `<span>· ${escapeHtml(inv.category)}</span>` : ''}
       ${inv.invoice_number ? `<span>· #${escapeHtml(inv.invoice_number)}</span>` : ''}
     </div>

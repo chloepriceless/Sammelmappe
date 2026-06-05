@@ -20,6 +20,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/chloepriceless/Sammelmap
 
 - **📷 Mobile-First Capture** — auf dem iPhone öffnet sich direkt die Kamera (oder Mediathek). Vorinstalliert als PWA „Zum Home-Bildschirm hinzufügen" verhält sich die App wie eine native App.
 - **🧠 Hybride OCR** — lokales Tesseract (deutsch+englisch) erkennt Rechnungssteller, Brutto-Gesamtbetrag, Datum und Rechnungsnummer. Bei niedriger Konfidenz fällt das System automatisch auf **Claude Vision** zurück (optional, braucht API-Key).
+- **📐 E-Rechnung (ZUGFeRD / Factur-X / XRechnung)** — trägt ein hochgeladenes PDF eine eingebettete E-Rechnung (oder lädst du eine `.xml` direkt hoch), werden die Werte **direkt aus dem strukturierten XML** gelesen statt geraten: 100 % exakt, sofort, ohne OCR und ohne API-Kosten. Erkennt CII (UN/CEFACT) und UBL (OASIS).
 - **🧾 Liste mit Live-Summe** — markiere beliebige offene Belege, die Summe wird oben live mitgeführt.
 - **📤 Ein-Klick Export** — alle ausgewählten Belege als ZIP, inkl. `uebersicht.csv` (Position, Datei, Steller, Datum, Betrag) und `README.txt` mit Gesamtsumme. Genau das, was du bei MyBaufi hochlädst.
 - **✅ Status-Tracking** — exportierte Belege werden automatisch als „Eingereicht" markiert. Alles andere bleibt „Offen". Filter-Chips oben.
@@ -128,6 +129,31 @@ Für diese Fälle gibt es den **Claude-Vision-Fallback**: Wenn die Tesseract-Kon
 `ANTHROPIC_API_KEY` einfach in der `.env` setzen — sonst läuft alles im Tesseract-only-Modus.
 
 API-Key holst du dir hier: https://console.anthropic.com/
+
+---
+
+## E-Rechnung (ZUGFeRD / Factur-X / XRechnung)
+
+Seit 2025 stellen immer mehr Firmen ihre Rechnungen als **E-Rechnung** aus. Die
+verbreitete Hybrid-Variante (ZUGFeRD / Factur-X) sieht aus wie ein ganz normales
+PDF, trägt die Rechnung aber zusätzlich als maschinenlesbares **XML** in sich.
+XRechnung kommt als reine `.xml`-Datei.
+
+Wenn so eine Datei hochgeladen wird, liest Sammelmappe die Werte (Rechnungssteller,
+**Brutto-Gesamtbetrag inkl. MwSt**, Datum, Rechnungsnummer) **direkt aus dem XML** —
+kein OCR, kein Raten, kein Claude-Aufruf. Das ist exakt, sofort und kostenlos.
+Erkannt werden beide EN-16931-Syntaxen: **CII** (UN/CEFACT, ZUGFeRD/Factur-X) und
+**UBL** (OASIS, XRechnung). Solche Belege bekommen das Badge **„E-Rechnung"**.
+
+Ist kein E-Rechnung-XML vorhanden, läuft alles wie gehabt über OCR / Claude.
+
+> **Einordnung:** Die gesetzliche E-Rechnungs-*Pflicht* gilt nur zwischen Unternehmen
+> (B2B) — als privater Bauherr bekommst du sie nicht zwingend. Das Feature ist also
+> ein **Genauigkeits-Bonus** für die Fälle, in denen ein Lieferant/Bauträger bereits
+> ZUGFeRD verschickt, kein Muss. *(Stand 06/2026, keine Steuerberatung.)*
+
+Technisch: das eingebettete XML wird mit `defusedxml` geparst (abgesichert gegen
+XXE / Entity-Expansion), denn Belege können von Dritten stammen.
 
 ---
 

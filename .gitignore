@@ -13,3 +13,6 @@ venv/
 .claude/
 .DS_Store
 *.log
+
+.planning/inbox/
+.planning/archive/

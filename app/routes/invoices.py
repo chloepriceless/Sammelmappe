@@ -23,11 +23,15 @@ router = APIRouter(prefix="/api/invoices", tags=["invoices"], dependencies=[Depe
 ALLOWED_MIME = {
     "image/jpeg", "image/jpg", "image/png", "image/heic", "image/webp",
     "application/pdf",
+    "application/xml", "text/xml",   # standalone XRechnung uploads
 }
 
 
 def _document_type(engine: str | None) -> str:
-    """Kassenbeleg if a TSE QR was used (engine prefix 'qr+'), else Rechnung."""
+    """Classify by the engine that produced the data:
+    'einvoice-*' → E-Rechnung, 'qr+*' (TSE QR) → Kassenbeleg, else Rechnung."""
+    if engine and engine.startswith("einvoice"):
+        return "E-Rechnung"
     if engine and engine.startswith("qr+"):
         return "Kassenbeleg"
     return "Rechnung"
