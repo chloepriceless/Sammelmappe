@@ -643,6 +643,12 @@ a { color: var(--accent); text-decoration: none; }
   margin: 0 0 12px;
   line-height: 1.4;
 }
+.hint.privacy-note {
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
 
 /* Fullscreen viewer */
 

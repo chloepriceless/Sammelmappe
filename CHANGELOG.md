@@ -4,6 +4,14 @@ Alle nennenswerten Änderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.1.1] — 2026-06-05
+
+### Added
+- **DSGVO-Transparenz:** Der Einstellungs-Dialog weist jetzt darauf hin, dass bei
+  Claude-Vision-Nutzung das Belegbild an Anthropic (USA, Drittland) übertragen wird;
+  Tesseract + E-Rechnung-Parsing laufen rein lokal. Neuer „Datenschutz (DSGVO)"-
+  Abschnitt in der README. Keine Verhaltensänderung — reine Aufklärung.
+
 ## [1.1.0] — 2026-06-05
 
 ### Added
@@ -49,5 +57,6 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Status-Tracking, Einreichungs-Historie, Duplikat-Erkennung, Kategorien,
   Auth (Argon2), Proxmox-/Docker-Setup.
 
+[1.1.1]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.1.1
 [1.1.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.1.0
 [1.0.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.0.0

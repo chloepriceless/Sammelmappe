@@ -175,6 +175,26 @@ Steuerberatung — im Zweifel mit dem Steuerberater klären.*
 
 ---
 
+## Datenschutz (DSGVO)
+
+Sammelmappe ist selbstgehostet — deine Belege liegen auf **deinem** Server, nicht in
+einer fremden Cloud.
+
+- **Tesseract** (Standard-OCR) und das **E-Rechnung-XML-Parsing** laufen **vollständig
+  lokal**. Ohne Anthropic-Key verlässt kein Beleg dein Gerät.
+- **Claude Vision** ist optional. Sobald aktiv, wird das Belegbild zur Erkennung an
+  **Anthropic in die USA** übertragen (Drittland-Transfer, Art. 44 ff. DSGVO; Anthropic
+  ist unter dem EU-US Data Privacy Framework gelistet). Die App weist im
+  Einstellungs-Dialog darauf hin.
+- **Rein privater Eigengebrauch** fällt i.d.R. unter die Haushaltsausnahme
+  (Art. 2 Abs. 2 lit. c DSGVO). **Als Unternehmer/Selbstständiger** solltest du einen
+  Anthropic-API-Key über ein **kommerzielles Konto mit Auftragsverarbeitungsvertrag
+  (AVV)** nutzen und ggf. sensible Felder vor dem Upload schwärzen.
+
+*Stand 06/2026, keine Rechtsberatung.*
+
+---
+
 ## Konfiguration (`.env`)
 
 | Variable                   | Default                          | Bedeutung                                                                |
