@@ -21,6 +21,7 @@ This estimates from user-entered facts only — it is **not tax advice**.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -61,7 +62,8 @@ def evaluate_invoice(invoice_date, move_in_date, labor_amount,
     reasons: list[str] = []
     eligible = True
 
-    if labor_amount is None or labor_amount <= 0:
+    # Defensive: reject None, non-finite (NaN/Inf would slip past ``<= 0``) and ≤0.
+    if labor_amount is None or not math.isfinite(labor_amount) or labor_amount <= 0:
         eligible = False
         reasons.append(REASON_NO_LABOR)
 

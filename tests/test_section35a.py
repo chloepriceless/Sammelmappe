@@ -59,6 +59,19 @@ def test_zero_labor_excludes():
     assert REASON_NO_LABOR in ev.reasons
 
 
+def test_non_finite_labor_is_excluded():
+    # NaN/Inf would slip past a bare '<= 0' check → must be treated as no labour.
+    assert _ev(labor_amount=float("inf")).eligible is False
+    assert _ev(labor_amount=float("nan")).eligible is False
+    assert REASON_NO_LABOR in _ev(labor_amount=float("inf")).reasons
+
+
+def test_summary_ignores_non_finite_labor():
+    s = summarize([_row(labor_amount=float("inf")), _row(labor_amount=float("nan"))], MOVE_IN)
+    assert s.estimated_deduction == 0.0
+    assert s.confirmed_count == 0
+
+
 def test_cash_payment_excludes():
     ev = _ev(payment_method="cash")
     assert ev.eligible is False

@@ -4,6 +4,31 @@ Alle nennenswerten Änderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.4.0] — 2026-06-07
+
+### Added
+- **§ 35a EStG Handwerkerbonus-Helfer.** Pro Beleg lassen sich jetzt der
+  **Arbeitskosten-Anteil**, die **Zahlungsart** und das **Zahlungsdatum** erfassen
+  (aufklappbarer Bereich im Beleg-Detail); das **Einzugsdatum** wird in den
+  Einstellungen gesetzt. Die Übersicht (Statistik-Tab) schätzt daraus konservativ die
+  mögliche Steuerermäßigung (**20 % der Arbeitskosten, max 1.200 €/Jahr**) und zeigt
+  transparent, **warum** ein Beleg NICHT zählt (Barzahlung, Neubauphase vor Einzug,
+  fehlender Arbeitskosten-Anteil, …). Neuer Endpoint `GET /api/section35a`.
+- Konservative, verifizierte Regeln (keine Steuerberatung): nur **Arbeit** (kein
+  Material), nur **unbar** (Barzahlung/unbekannt zählen nicht), nur am **bezogenen
+  Haushalt** (Neubau bis Fertigstellung ist nicht begünstigt — BMF-Schreiben
+  v. 09.11.2016), Jahres-Cap nach dem **Zahlungsjahr** (§ 11 Abflussprinzip).
+
+### Changed
+- Leichte, **idempotente, race-sichere DB-Migration** beim Start ergänzt die neuen
+  Beleg-Spalten (`labor_amount`, `payment_method`, `payment_date`) auf bestehenden
+  Datenbanken — `create_all` legt nur fehlende Tabellen an, ändert vorhandene nicht.
+
+### Security
+- `labor_amount` wird auf **endliche, nicht-negative** Werte **≤ Rechnungssumme**
+  validiert (NaN/Inf werden abgewiesen) — der § 35a-Pfad zählt nie einen unsicheren
+  oder unplausiblen Wert. Design **und** Implementierung Codex-refute-geprüft.
+
 ## [1.3.0] — 2026-06-07
 
 ### Added
@@ -93,6 +118,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Status-Tracking, Einreichungs-Historie, Duplikat-Erkennung, Kategorien,
   Auth (Argon2), Proxmox-/Docker-Setup.
 
+[1.4.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.4.0
 [1.3.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.3.0
 [1.2.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.2.0
 [1.1.1]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.1.1

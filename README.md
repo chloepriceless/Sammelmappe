@@ -29,6 +29,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/chloepriceless/Sammelmap
 - **✏️ Manuelle Korrektur** — jedes Feld lässt sich in der Edit-Maske überschreiben (Vendor, Betrag, Datum, Nummer, Kategorie, Notiz).
 - **🏷️ Kategorien** — Material, Handwerker, Sanitär, Elektro, Heizung, Fenster/Türen, Boden, Dach, Garten, Planung, Gebühren, Sonstiges.
 - **📊 Übersicht** — Summe Offen vs. Eingereicht, pro Kategorie, Anzahl Einreichungen.
+- **🧮 § 35a Handwerkerbonus** — schätzt konservativ die mögliche Steuerermäßigung (20 % der Arbeitskosten, max 1.200 €/Jahr) aus dem erfassten Arbeitskosten-Anteil, der Zahlungsart und deinem Einzugsdatum — inkl. Hinweis, warum ein Beleg nicht zählt. Keine Steuerberatung.
 - **🌓 Dark Mode** — folgt System-Einstellung.
 - **🔍 Suche** — Vendor, Rechnungsnummer, Original-Dateiname, Notizen.
 - **🖱️ Drag & Drop** auf dem Desktop.
@@ -184,6 +185,33 @@ Steuerberatung — im Zweifel mit dem Steuerberater klären.*
 
 ---
 
+## § 35a EStG (Handwerkerbonus)
+
+Für **Handwerkerleistungen am selbstgenutzten, bereits bezogenen Haushalt** gibt es eine
+Steuerermäßigung von **20 % der Arbeitskosten, höchstens 1.200 € pro Jahr** (§ 35a Abs. 3
+EStG). Sammelmappe hilft beim Überblick:
+
+- Pro Beleg trägst du den **Arbeitskosten-Anteil** (nur Lohn/Maschine/Fahrt, **kein
+  Material**), die **Zahlungsart** und das **Zahlungsdatum** ein.
+- In den Einstellungen setzt du dein **Einzugsdatum**.
+- Die **Übersicht** schätzt daraus konservativ die mögliche Steuerermäßigung pro Jahr —
+  und zeigt transparent, **warum** ein Beleg nicht zählt.
+
+Berücksichtigt sind die drei klassischen Stolpersteine:
+
+- **Nur unbar:** Barzahlung wird nicht anerkannt; „Zahlungsart unbekannt" zählt ebenfalls nicht.
+- **Nicht in der Neubauphase:** Maßnahmen bis zur Fertigstellung/zum Bezug eines neu errichteten
+  Haushalts sind **nicht** begünstigt (BMF-Schreiben v. 09.11.2016) — erst danach (Restarbeiten,
+  Garten, Carport).
+- **Maßgeblich ist das Zahlungsjahr** (§ 11 EStG), nicht das Rechnungsdatum.
+
+> **Wichtig:** § 35a mindert die **Steuer**, nicht das Einkommen; bei zu geringer
+> Einkommensteuer verpufft ein Teil. Für die typische **Bauphase vor dem Einzug** greift
+> § 35a meist nicht — es ist ein Bonus nach dem Bezug. *Stand 06/2026, **keine
+> Steuerberatung** — im Zweifel mit dem Steuerberater klären.*
+
+---
+
 ## Datenschutz (DSGVO)
 
 Sammelmappe ist selbstgehostet — deine Belege liegen auf **deinem** Server, nicht in
@@ -265,6 +293,7 @@ Cookie-authentifiziert, gleiche Session wie das UI. Alle Endpoints unter `/api/*
 | `GET`   | `/api/invoices/{id}/file`             | Original-Download                              |
 | `GET`   | `/api/invoices/{id}/thumbnail`        | JPG-Thumbnail                                  |
 | `GET`   | `/api/invoices/{id}/lines`            | E-Rechnung-Positionen (aus dem XML, netto)     |
+| `GET`   | `/api/section35a`                     | § 35a-Schätzung (Handwerkerbonus) pro Jahr     |
 | `POST`  | `/api/export`                         | `{invoice_ids, label, mark_submitted}` → ZIP   |
 | `GET`   | `/api/export/{id}/download`           | Re-Download                                    |
 | `GET`   | `/api/submissions`                    | Liste vergangener Einreichungen                |

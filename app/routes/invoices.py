@@ -1,4 +1,5 @@
 import logging
+import math
 import secrets
 from datetime import date, datetime
 from pathlib import Path
@@ -265,9 +266,18 @@ def update_invoice(
             inv.labor_amount = None
         else:
             try:
-                inv.labor_amount = float(v)
+                labor = float(v)
             except (TypeError, ValueError):
                 raise HTTPException(status_code=400, detail="labor_amount muss eine Zahl sein")
+            # Reject NaN/Inf/negative — they would slip past the § 35a '<= 0' check and
+            # produce a bogus (or NaN-poisoned) deduction.
+            if not math.isfinite(labor) or labor < 0:
+                raise HTTPException(status_code=400, detail="labor_amount muss eine endliche, nicht-negative Zahl sein")
+            # Labour share can't exceed the invoice total (the amount block ran first,
+            # so inv.amount already reflects this request's value).
+            if inv.amount is not None and labor > inv.amount:
+                raise HTTPException(status_code=400, detail="Arbeitskosten-Anteil darf die Rechnungssumme nicht übersteigen")
+            inv.labor_amount = labor
         touched = True
 
     if "payment_method" in payload:
