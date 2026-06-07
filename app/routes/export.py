@@ -2,7 +2,7 @@ import csv
 import io
 import logging
 import zipfile
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,11 +14,16 @@ from ..auth import require_auth
 from ..config import settings
 from ..db import get_db
 from ..models import Invoice, Submission
-from ..utils import format_eur, slugify
+from ..utils import format_eur, slugify, retention_until_date
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["export"], dependencies=[Depends(require_auth)])
+
+CSV_HEADER = [
+    "Position", "Datei", "Rechnungssteller", "Rechnungsnummer",
+    "Rechnungsdatum", "Kategorie", "Betrag (EUR)", "Aufbewahren bis", "Notiz",
+]
 
 
 class ExportRequest(BaseModel):
@@ -26,6 +31,114 @@ class ExportRequest(BaseModel):
     label: str | None = None
     mark_submitted: bool = True
 
+
+# --- pure helpers (DB-/HTTP-free, unit-tested in tests/test_export.py) -------
+
+def _archive_name(idx: int, inv) -> str:
+    """File name an invoice gets inside the ZIP. Shared with the CSV's 'Datei'
+    column so both always agree (NNN_YYYY-MM-DD_vendor-slug.ext)."""
+    suffix = Path(inv.filename).suffix or Path(inv.original_name).suffix
+    vendor_slug = slugify(inv.vendor or "Rechnung")
+    date_part = inv.invoice_date.strftime("%Y-%m-%d") if inv.invoice_date else "ohne-datum"
+    return f"{idx:03d}_{date_part}_{vendor_slug}{suffix}"
+
+
+def _csv_eur(value: float | None) -> str:
+    """Plain comma-decimal, no thousands separator, no € — matches the CSV style."""
+    return f"{value:.2f}".replace(".", ",") if value is not None else ""
+
+
+def category_subtotals(invoices) -> list[tuple[str, float]]:
+    """Sum of gross amounts per category, sorted by total desc then name.
+
+    An empty/missing category collapses to 'Ohne Kategorie'. A missing amount
+    counts as 0.0 — same convention as the grand total."""
+    totals: dict[str, float] = {}
+    for inv in invoices:
+        cat = (getattr(inv, "category", None) or "").strip() or "Ohne Kategorie"
+        totals[cat] = round(totals.get(cat, 0.0) + (getattr(inv, "amount", None) or 0.0), 2)
+    return sorted(totals.items(), key=lambda kv: (-kv[1], kv[0]))
+
+
+def _retention_for(inv) -> date | None:
+    """§14b retention date for one invoice — invoice date preferred, else upload time
+    (mirrors routes/invoices._retention_until)."""
+    return retention_until_date(getattr(inv, "invoice_date", None) or getattr(inv, "created_at", None))
+
+
+def latest_retention(invoices) -> date | None:
+    """The latest 'keep until' date across the bundle — i.e. how long the whole
+    folder must be retained at minimum."""
+    dates = [d for d in (_retention_for(i) for i in invoices) if d is not None]
+    return max(dates) if dates else None
+
+
+def build_overview_csv(invoices) -> str:
+    """Render ``uebersicht.csv``: one row per invoice + grand total + a
+    per-category subtotal block. ``invoices`` must already be in export order."""
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(CSV_HEADER)
+
+    total = 0.0
+    for idx, inv in enumerate(invoices, 1):
+        ret = _retention_for(inv)
+        w.writerow([
+            idx,
+            _archive_name(idx, inv),
+            inv.vendor or "",
+            inv.invoice_number or "",
+            inv.invoice_date.isoformat() if inv.invoice_date else "",
+            inv.category or "",
+            _csv_eur(inv.amount),
+            ret.isoformat() if ret else "",
+            (inv.notes or "").replace("\n", " "),
+        ])
+        total += inv.amount or 0.0
+
+    # Grand total (SUMME under 'Kategorie', amount under 'Betrag (EUR)').
+    w.writerow([])
+    w.writerow(["", "", "", "", "", "SUMME", _csv_eur(round(total, 2)), "", ""])
+
+    # Per-category breakdown ("Kostenaufstellung nach Gewerk").
+    w.writerow([])
+    w.writerow(["Summe je Kategorie"])
+    for cat, sub in category_subtotals(invoices):
+        w.writerow([cat, _csv_eur(sub)])
+
+    return buf.getvalue()
+
+
+def build_readme_text(invoices, label: str | None, total: float, created_at: str) -> str:
+    """Render ``README.txt`` with totals, a per-category breakdown and the
+    §14b UStG retention reminder for the whole bundle."""
+    lines = [
+        "Sammelmappe — Export für die Baufinanzierung",
+        f"Erstellt: {created_at}",
+        f"Label: {label or '(kein Label)'}",
+        f"Anzahl Rechnungen: {len(invoices)}",
+        f"Gesamtbetrag: {format_eur(total)}",
+        "",
+        "Summe je Kategorie:",
+    ]
+    for cat, sub in category_subtotals(invoices):
+        lines.append(f"  - {cat}: {format_eur(sub)}")
+
+    lines += [
+        "",
+        "Aufbewahrung (§ 14b UStG):",
+        "  Als Privatperson musst du Rechnungen über grundstücksbezogene Leistungen",
+        "  (Bau / Sanierung / Handwerker am Haus) 2 Jahre aufbewahren — zusammen mit",
+        "  Zahlungsbeleg, Bauvertrag und Abnahmeprotokoll.",
+    ]
+    keep_until = latest_retention(invoices)
+    if keep_until:
+        lines.append(f"  Diese Unterlagen mindestens bis {keep_until.strftime('%d.%m.%Y')} aufbewahren.")
+    lines += ["  (Stand 06/2026, keine Steuerberatung.)", ""]
+    return "\n".join(lines)
+
+
+# --- routes ------------------------------------------------------------------
 
 @router.post("/export")
 def export_invoices(payload: ExportRequest, db: Session = Depends(get_db)):
@@ -46,51 +159,23 @@ def export_invoices(payload: ExportRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Dateien fehlen für IDs: {missing}")
 
     total = sum(i.amount or 0.0 for i in invoices)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    now = datetime.now()
+    timestamp = now.strftime("%Y%m%d_%H%M%S")
     label_part = slugify(payload.label or "baukredit")
     zip_name = f"Sammelmappe_{label_part}_{timestamp}.zip"
     zip_path = settings.data_dir / "exports" / zip_name
     zip_path.parent.mkdir(parents=True, exist_ok=True)
 
-    csv_buf = io.StringIO()
-    csv_writer = csv.writer(csv_buf, delimiter=";")
-    csv_writer.writerow([
-        "Position", "Datei", "Rechnungssteller", "Rechnungsnummer",
-        "Rechnungsdatum", "Kategorie", "Betrag (EUR)", "Notiz",
-    ])
-
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for idx, inv in enumerate(invoices, 1):
             src = settings.invoices_dir / inv.filename
-            suffix = Path(inv.filename).suffix or Path(inv.original_name).suffix
-            vendor_slug = slugify(inv.vendor or "Rechnung")
-            date_part = inv.invoice_date.strftime("%Y-%m-%d") if inv.invoice_date else "ohne-datum"
-            arc_name = f"{idx:03d}_{date_part}_{vendor_slug}{suffix}"
-            zf.write(src, arc_name)
+            zf.write(src, _archive_name(idx, inv))
 
-            csv_writer.writerow([
-                idx,
-                arc_name,
-                inv.vendor or "",
-                inv.invoice_number or "",
-                inv.invoice_date.isoformat() if inv.invoice_date else "",
-                inv.category or "",
-                f"{inv.amount:.2f}".replace(".", ",") if inv.amount is not None else "",
-                (inv.notes or "").replace("\n", " "),
-            ])
-
-        csv_writer.writerow([])
-        csv_writer.writerow(["", "", "", "", "", "SUMME", f"{total:.2f}".replace(".", ","), ""])
-
-        zf.writestr("uebersicht.csv", csv_buf.getvalue().encode("utf-8-sig"))
+        zf.writestr("uebersicht.csv", build_overview_csv(invoices).encode("utf-8-sig"))
         zf.writestr(
             "README.txt",
-            (
-                f"Sammelmappe — Export für die Baufinanzierung\n"
-                f"Erstellt: {datetime.now().isoformat(timespec='seconds')}\n"
-                f"Label: {payload.label or '(kein Label)'}\n"
-                f"Anzahl Rechnungen: {len(invoices)}\n"
-                f"Gesamtbetrag: {format_eur(total)}\n"
+            build_readme_text(
+                invoices, payload.label, total, now.isoformat(timespec="seconds")
             ).encode("utf-8"),
         )
 

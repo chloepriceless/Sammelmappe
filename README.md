@@ -22,7 +22,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/chloepriceless/Sammelmap
 - **🧠 Hybride OCR** — lokales Tesseract (deutsch+englisch) erkennt Rechnungssteller, Brutto-Gesamtbetrag, Datum und Rechnungsnummer. Bei niedriger Konfidenz fällt das System automatisch auf **Claude Vision** zurück (optional, braucht API-Key).
 - **📐 E-Rechnung (ZUGFeRD / Factur-X / XRechnung)** — trägt ein hochgeladenes PDF eine eingebettete E-Rechnung (oder lädst du eine `.xml` direkt hoch), werden die Werte **direkt aus dem strukturierten XML** gelesen statt geraten: 100 % exakt, sofort, ohne OCR und ohne API-Kosten. Erkennt CII (UN/CEFACT) und UBL (OASIS).
 - **🧾 Liste mit Live-Summe** — markiere beliebige offene Belege, die Summe wird oben live mitgeführt.
-- **📤 Ein-Klick Export** — alle ausgewählten Belege als ZIP, inkl. `uebersicht.csv` (Position, Datei, Steller, Datum, Betrag) und `README.txt` mit Gesamtsumme. Genau das, was du bei MyBaufi hochlädst.
+- **📤 Ein-Klick Export** — alle ausgewählten Belege als ZIP, inkl. `uebersicht.csv` (Position, Datei, Steller, Datum, Kategorie, Betrag, **Aufbewahren bis**) und `README.txt`. Beide enthalten eine **Summe je Kategorie** (Kostenaufstellung nach Gewerk) und den **§ 14b-Aufbewahrungshinweis** für die ganze Mappe. Genau das, was du bei MyBaufi hochlädst.
 - **✅ Status-Tracking** — exportierte Belege werden automatisch als „Eingereicht" markiert. Alles andere bleibt „Offen". Filter-Chips oben.
 - **↩️ Einreichungs-Historie** — alle vergangenen Exporte mit ZIP-Re-Download und „Zurücksetzen" (falls die Bank mal eine Tranche ablehnt).
 - **🔁 Duplikat-Erkennung** — gleiche Datei zweimal hochgeladen → 409 + Hinweis.

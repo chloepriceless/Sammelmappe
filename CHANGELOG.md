@@ -4,6 +4,22 @@ Alle nennenswerten Änderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.2.0] — 2026-06-07
+
+### Added
+- **Kostenaufstellung im Export-Bundle.** Die `uebersicht.csv` und die `README.txt`
+  enthalten jetzt eine **Summe je Kategorie** (Material, Handwerker, Dach, …) — die
+  Kostenaufstellung nach Gewerk, die Bank und Bauherr ohnehin brauchen.
+- **§ 14b-Aufbewahrung wandert mit ins Bundle.** Die CSV hat eine neue Spalte
+  **„Aufbewahren bis"** pro Beleg; die README nennt das **späteste** Aufbewahren-bis-
+  Datum der Mappe und erinnert an Zahlungsbeleg / Bauvertrag / Abnahmeprotokoll.
+
+### Changed
+- CSV-/README-Erzeugung in reine, getestete Helfer (`build_overview_csv`,
+  `build_readme_text`, `category_subtotals`) ausgelagert; der ZIP-Dateiname und die
+  CSV-Spalte „Datei" teilen sich jetzt denselben Generator (`_archive_name`) und
+  können nicht mehr auseinanderlaufen. Keine Verhaltensänderung am Datei-Layout.
+
 ## [1.1.1] — 2026-06-05
 
 ### Added
@@ -57,6 +73,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Status-Tracking, Einreichungs-Historie, Duplikat-Erkennung, Kategorien,
   Auth (Argon2), Proxmox-/Docker-Setup.
 
+[1.2.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.2.0
 [1.1.1]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.1.1
 [1.1.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.1.0
 [1.0.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.0.0
