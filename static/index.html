@@ -64,6 +64,8 @@
       <div class="stats-grid" id="stats-grid"></div>
       <h3 style="margin:18px 0 8px;font-size:14px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">Kategorien</h3>
       <div id="stats-categories" class="card-list"></div>
+      <h3 style="margin:18px 0 8px;font-size:14px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;">§ 35a Handwerkerbonus</h3>
+      <div id="stats-35a"></div>
     </div>
   </section>
 
@@ -151,6 +153,26 @@
       </div>
     </div>
     <div class="field"><label>Notiz</label><textarea id="edit-notes" placeholder="optional"></textarea></div>
+
+    <details class="edit-35a">
+      <summary>§ 35a Handwerkerbonus (optional)</summary>
+      <div class="field-row">
+        <div class="field"><label>Arbeitskosten-Anteil (€)</label>
+          <input id="edit-labor" inputmode="decimal" type="text" placeholder="nur Lohn, kein Material">
+        </div>
+        <div class="field"><label>Zahlungsart</label>
+          <select id="edit-payment-method">
+            <option value="">—</option>
+            <option value="transfer">Überweisung</option>
+            <option value="cash">Bar</option>
+          </select>
+        </div>
+      </div>
+      <div class="field"><label>Zahlungsdatum</label><input id="edit-payment-date" type="date"></div>
+      <p class="hint">Nur der <b>Arbeitskosten-Anteil</b> (Lohn/Maschine/Fahrt) zählt für § 35a — nicht
+      Material. Nur <b>unbare</b> Zahlung wird anerkannt; das Zahlungsdatum bestimmt das Steuerjahr.
+      <em>Keine Steuerberatung.</em></p>
+    </details>
 
     <div class="modal-actions">
       <button id="edit-cancel">Abbrechen</button>
@@ -240,6 +262,15 @@
           <input id="set-threshold" type="number" step="0.05" min="0" max="1">
         </div>
       </div>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-label">§ 35a Handwerkerbonus</div>
+      <p class="hint">Optional. Mit deinem <b>Einzugsdatum</b> schätzt die App in der Übersicht grob,
+      welche <b>Handwerker-Arbeitskosten</b> nach § 35a EStG absetzbar sein könnten. In der
+      <b>Neubauphase vor dem Einzug</b> ist § 35a i.d.R. nicht begünstigt (BMF 09.11.2016).
+      <em>Keine Steuerberatung.</em></p>
+      <div class="field"><label>Einzugsdatum</label><input id="set-move-in" type="date"></div>
     </div>
 
     <div class="modal-actions">

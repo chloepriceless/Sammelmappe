@@ -1,4 +1,6 @@
 """Runtime-overridable settings exposed to the UI."""
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
@@ -16,6 +18,7 @@ class SettingsResponse(BaseModel):
     claude_model: str
     ocr_confidence_threshold: float
     ocr_prefer_claude: bool                     # if true: Claude is primary, Tesseract fallback
+    move_in_date: str | None                    # Einzugsdatum (YYYY-MM-DD) for the § 35a helper
 
 
 class SettingsUpdate(BaseModel):
@@ -23,6 +26,7 @@ class SettingsUpdate(BaseModel):
     claude_model: str | None = None
     ocr_confidence_threshold: float | None = None
     ocr_prefer_claude: bool | None = None
+    move_in_date: str | None = None             # '' clears, YYYY-MM-DD sets, None keeps
 
 
 def _preview(key: str) -> str | None:
@@ -56,6 +60,7 @@ def _build_response() -> SettingsResponse:
         claude_model=model,
         ocr_confidence_threshold=threshold,
         ocr_prefer_claude=prefer_claude,
+        move_in_date=get_runtime("move_in_date", None),
     )
 
 
@@ -92,6 +97,17 @@ def update_settings(payload: SettingsUpdate):
 
     if payload.ocr_prefer_claude is not None:
         set_runtime("ocr_prefer_claude", "1" if payload.ocr_prefer_claude else "0")
+
+    if payload.move_in_date is not None:
+        v = payload.move_in_date.strip()
+        if v == "":
+            set_runtime("move_in_date", None)
+        else:
+            try:
+                date.fromisoformat(v)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Einzugsdatum muss YYYY-MM-DD sein.")
+            set_runtime("move_in_date", v)
 
     return _build_response()
 

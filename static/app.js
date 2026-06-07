@@ -330,6 +330,9 @@ function openEdit(inv) {
   $('#edit-number').value = inv.invoice_number || '';
   $('#edit-category').value = inv.category || '';
   $('#edit-notes').value = inv.notes || '';
+  $('#edit-labor').value = inv.labor_amount != null ? String(inv.labor_amount).replace('.', ',') : '';
+  $('#edit-payment-method').value = inv.payment_method || '';
+  $('#edit-payment-date').value = inv.payment_date || '';
   $('#edit-download').href = `/api/invoices/${inv.id}/file?download=true`;
 
   // OCR meta
@@ -411,6 +414,12 @@ $('#edit-save').addEventListener('click', async () => {
     toast('Betrag ist keine gültige Zahl', 'error');
     return;
   }
+  const rawLabor = $('#edit-labor').value.trim().replace(/\s/g, '').replace('.', '').replace(',', '.');
+  const labor = rawLabor === '' ? null : Number(rawLabor);
+  if (rawLabor !== '' && !Number.isFinite(labor)) {
+    toast('Arbeitskosten-Anteil ist keine gültige Zahl', 'error');
+    return;
+  }
   const payload = {
     vendor: $('#edit-vendor').value.trim() || null,
     amount,
@@ -418,6 +427,9 @@ $('#edit-save').addEventListener('click', async () => {
     invoice_number: $('#edit-number').value.trim() || null,
     category: $('#edit-category').value || null,
     notes: $('#edit-notes').value.trim() || null,
+    labor_amount: labor,
+    payment_method: $('#edit-payment-method').value || null,
+    payment_date: $('#edit-payment-date').value || null,
   };
   try {
     await api(`/api/invoices/${id}`, {
@@ -607,6 +619,7 @@ async function openSettings() {
     $('#set-model').value = s.claude_model || '';
     $('#set-threshold').value = s.ocr_confidence_threshold ?? 0.6;
     $('#set-prefer-claude').checked = !!s.ocr_prefer_claude;
+    $('#set-move-in').value = s.move_in_date || '';
   } catch (e) {
     $('#set-status').textContent = `Fehler: ${e.message}`;
     $('#set-status').className = 'status-row err';
@@ -700,6 +713,7 @@ $('#set-save').addEventListener('click', async () => {
   if (model) body.claude_model = model;
   const t = parseFloat($('#set-threshold').value);
   if (Number.isFinite(t)) body.ocr_confidence_threshold = t;
+  body.move_in_date = $('#set-move-in').value || '';  // always sent so it can be cleared
   if (Object.keys(body).length === 0) {
     closeSettings();
     return;
@@ -845,8 +859,54 @@ async function loadStats() {
       `;
       cats.appendChild(row);
     }
+    renderSection35a();
   } catch (e) {
     if (e.message !== 'unauth') toast(`Laden fehlgeschlagen: ${e.message}`, 'error');
+  }
+}
+
+const S35A_REASONS = {
+  no_labor: 'ohne erfassten Arbeitskosten-Anteil',
+  cash: 'bar bezahlt (nicht anerkannt)',
+  payment_unconfirmed: 'Zahlungsart nicht als Überweisung bestätigt',
+  before_move_in: 'vor Einzug (Neubauphase)',
+  no_move_in: 'Einzugsdatum nicht gesetzt',
+  no_date: 'ohne Rechnungsdatum',
+};
+
+// § 35a Handwerkerbonus overview card. Self-contained: a failure here never breaks the stats tab.
+async function renderSection35a() {
+  const box = $('#stats-35a');
+  if (!box) return;
+  try {
+    const s = await api('/api/section35a');
+    let html = '';
+    if (!s.move_in_set) {
+      html += `<div class="s35a-note">Setz dein <b>Einzugsdatum</b> in den Einstellungen (⚙), damit § 35a geschätzt werden kann. Vor dem Einzug (Neubauphase) ist § 35a i.d.R. nicht begünstigt.</div>`;
+    }
+    html += `<div class="s35a-head">
+      <div class="s35a-big">${fmtEUR(s.estimated_deduction)}</div>
+      <div class="s35a-sub">geschätzte Steuerermäßigung · ${s.confirmed_count} Beleg${s.confirmed_count === 1 ? '' : 'e'} · ${fmtEUR(s.confirmed_labor)} Arbeitskosten</div>
+    </div>`;
+    if (s.years.length) {
+      html += '<div class="s35a-years">' + s.years.map(y =>
+        `<div class="s35a-year"><span>${y.year}</span><span>${fmtEUR(y.deduction)}${y.capped ? ' · Höchstbetrag erreicht' : ''}</span></div>`
+      ).join('') + '</div>';
+    }
+    const exReasons = Object.entries(s.excluded || {});
+    if (exReasons.length) {
+      html += '<div class="s35a-excluded"><div class="s35a-ex-title">Nicht gezählt:</div>' +
+        exReasons.map(([code, n]) => `<div>· ${n}× ${escapeHtml(S35A_REASONS[code] || code)}</div>`).join('') +
+        (s.excluded_labor_total ? `<div class="s35a-ex-sum">${fmtEUR(s.excluded_labor_total)} erfasste Arbeitskosten zählen aktuell nicht</div>` : '') +
+        '</div>';
+    }
+    if (s.year_assumed_any) {
+      html += `<div class="hint">Belege ohne Zahlungsdatum: Steuerjahr aus dem Rechnungsdatum geschätzt (maßgeblich ist das Zahlungsjahr, § 11 EStG).</div>`;
+    }
+    html += `<div class="hint s35a-caveat">20 % der Arbeitskosten, max 1.200 €/Jahr. Nur Arbeit (kein Material), nur unbar, nur am bezogenen Haushalt (nicht Neubau). § 35a mindert die Steuer, nicht das Einkommen — bei zu geringer Steuer verpufft ein Teil. <b>Keine Steuerberatung.</b></div>`;
+    box.innerHTML = html;
+  } catch (e) {
+    box.innerHTML = '';
   }
 }
 

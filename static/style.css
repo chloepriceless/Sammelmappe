@@ -485,6 +485,25 @@ a { color: var(--accent); text-decoration: none; }
 .li-desc .li-sub { display: block; color: var(--text-muted); font-size: 11px; margin-top: 2px; }
 .li-net { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text); }
 
+/* § 35a edit section (collapsible) */
+.edit-35a { margin: 4px 0 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0 12px; }
+.edit-35a > summary { cursor: pointer; padding: 10px 0; font-weight: 600; font-size: 14px; color: var(--text); list-style-position: inside; }
+.edit-35a[open] > summary { border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+.edit-35a .hint { margin-bottom: 10px; }
+
+/* § 35a overview card (stats tab) */
+.s35a-note { background: var(--accent-soft); color: var(--text); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 13px; margin-bottom: 10px; }
+.s35a-head { background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+.s35a-big { font-size: 26px; font-weight: 800; color: var(--text); }
+.s35a-sub { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+.s35a-years { margin-top: 8px; }
+.s35a-year { display: flex; justify-content: space-between; font-size: 14px; padding: 6px 2px; border-bottom: 1px solid var(--border); }
+.s35a-year:last-child { border-bottom: none; }
+.s35a-excluded { margin-top: 10px; font-size: 13px; color: var(--text-muted); }
+.s35a-ex-title { font-weight: 600; margin-bottom: 2px; color: var(--text); }
+.s35a-ex-sum { margin-top: 4px; font-style: italic; }
+.s35a-caveat { margin-top: 10px; }
+
 .modal-section {
   margin-top: 18px;
   padding-top: 14px;
