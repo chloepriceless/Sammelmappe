@@ -125,8 +125,13 @@ Quelle: gesetze-im-internet.de/estg/__35a.html. Abruf 2026-06-05.
 
 **NEUBAU — KERNFRAGE:** Handwerkerleistungen **im Rahmen einer Neubaumaßnahme sind NICHT begünstigt**. Begünstigt sind nur Maßnahmen am **bestehenden, bereits bezogenen Haushalt**. **[VERIFIED]**
 - Neubaumaßnahme = alle Maßnahmen im Zusammenhang mit der Errichtung eines Haushalts **bis zu dessen Fertigstellung** (BMF v. 09.11.2016, Az. IV C 8 - S 2296-b/07/10003, BStBl I 2016 S. 1213).
-- BFH bestätigt: nach Einzug/Bezug erbrachte Leistungen (z.B. Verputzarbeiten, erstmalige Gartenanlage, Carport-Errichtung) sind begünstigt (BFH **VI R 24/20**, Urteil v. **20.04.2023**).
-Quelle: bundesfinanzhof.de (STRE202310138 / VI R 24/20); deloitte-tax-news.de (Anlage BMF 35a). Abruf 2026-06-05.
+- Nach Einzug/Bezug erbrachte Leistungen (z.B. Verputzarbeiten, erstmalige Gartenanlage, Carport-Errichtung) sind begünstigt.
+Quelle: **BMF-Schreiben v. 09.11.2016, BStBl I 2016, 1213** (autoritativ, re-verifiziert 2026-06-07 via Haufe/smartsteuer); deloitte-tax-news.de (Anlage BMF 35a).
+
+> **KORREKTUR 2026-06-07 (Codex-Refute + Web-Re-Verify):** Das frühere Az **BFH VI R 24/20 (20.04.2023)** als
+> Neubau-Autorität ist **[UNCERTAIN] / vermutlich falsch attribuiert** — anderer Sachverhalt (eher
+> Rechnungsnachweis/haushaltsnahe Leistungen). Die belastbare Neubau-Autorität ist das **BMF-Schreiben
+> 09.11.2016** (Finanzverwaltung). Im Produkt wird daher KEIN BFH-Az zitiert, nur § 35a EStG + BMF 09.11.2016.
 
 > **Produkt-Hinweis:** Für die viele Nutzer betreffende **Neubauphase greift § 35a meist nicht** — wichtige Erwartungssteuerung. Erst nach Einzug (z.B. Restarbeiten, Garten, Carport) wird es relevant. Produkt könnte: Belege nach „Bauphase vor Bezug" vs. „nach Bezug" taggen; bei nach-Bezug-Belegen Arbeitskosten separat ausweisen + auf unbare Zahlung achten (Barzahlung = nicht absetzbar). Hinweis: § 35a betrifft selbstnutzende Eigentümer; für reine Bau-/Finanzierungs-Einreichung bei der Bank ist es ein Bonus-Feature.
 

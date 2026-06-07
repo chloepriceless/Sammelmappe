@@ -34,6 +34,11 @@ class Invoice(Base):
     category: Mapped[str | None] = mapped_column(String, nullable=True)   # Material / Handwerker / Sanitär / ...
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # § 35a EStG (Handwerkerbonus) — optional, user-entered. See app/section35a.py.
+    labor_amount: Mapped[float | None] = mapped_column(Float, nullable=True)   # Arbeitskosten-Anteil in EUR
+    payment_method: Mapped[str | None] = mapped_column(String, nullable=True)  # "transfer" | "cash" | None
+    payment_date: Mapped[date | None] = mapped_column(Date, nullable=True)     # Zahlungsdatum (§ 11 Abflussprinzip)
+
     # Status
     status: Mapped[str] = mapped_column(String, default="open", index=True)  # open | submitted
     submission_id: Mapped[int | None] = mapped_column(ForeignKey("submissions.id"), nullable=True, index=True)

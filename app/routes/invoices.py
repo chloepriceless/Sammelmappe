@@ -48,6 +48,9 @@ def _invoice_to_dict(inv: Invoice) -> dict:
         "invoice_number": inv.invoice_number,
         "category": inv.category,
         "notes": inv.notes,
+        "labor_amount": inv.labor_amount,
+        "payment_method": inv.payment_method,
+        "payment_date": inv.payment_date.isoformat() if inv.payment_date else None,
         "status": inv.status,
         "submission_id": inv.submission_id,
         "ocr_engine": inv.ocr_engine,
@@ -253,6 +256,39 @@ def update_invoice(
                 inv.invoice_date = date.fromisoformat(v)
             except ValueError:
                 raise HTTPException(status_code=400, detail="invoice_date muss YYYY-MM-DD sein")
+        touched = True
+
+    # § 35a fields
+    if "labor_amount" in payload:
+        v = payload["labor_amount"]
+        if v in (None, ""):
+            inv.labor_amount = None
+        else:
+            try:
+                inv.labor_amount = float(v)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="labor_amount muss eine Zahl sein")
+        touched = True
+
+    if "payment_method" in payload:
+        v = payload["payment_method"]
+        if v in (None, ""):
+            inv.payment_method = None
+        elif v in ("transfer", "cash"):
+            inv.payment_method = v
+        else:
+            raise HTTPException(status_code=400, detail="payment_method muss 'transfer' oder 'cash' sein")
+        touched = True
+
+    if "payment_date" in payload:
+        v = payload["payment_date"]
+        if v in (None, ""):
+            inv.payment_date = None
+        else:
+            try:
+                inv.payment_date = date.fromisoformat(v)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="payment_date muss YYYY-MM-DD sein")
         touched = True
 
     if "status" in payload and payload["status"] in {"open", "submitted"}:
