@@ -173,6 +173,11 @@ Sammelmappe zeigt dir darum im Beleg-Detail ein **„Aufbewahren bis"-Datum**
 (Rechnungsjahr + 2 Jahre, gerechnet ab Jahresende). *Stand 06/2026, keine
 Steuerberatung — im Zweifel mit dem Steuerberater klären.*
 
+> **Gewährleistung (§ 634a BGB):** Unabhängig von der steuerlichen Frist gilt für
+> Mängelansprüche an einem **Bauwerk** i.d.R. eine **5-jährige Verjährung ab Abnahme**.
+> Wer Bauleistungen erhält, sollte Rechnung, Zahlungsbeleg und Abnahmeprotokoll daher
+> mindestens so lange behalten, um Mängel reklamieren zu können. *Keine Rechtsberatung.*
+
 > **Tipp:** Da die App pro Beleg auch den Zahlungsbeleg-Hinweis trägt: lade neben
 > der Rechnung am besten gleich den Überweisungsbeleg mit hoch (eigener Eintrag oder
 > als Notiz).

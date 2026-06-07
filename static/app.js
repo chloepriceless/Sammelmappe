@@ -341,7 +341,7 @@ function openEdit(inv) {
                   : docType === 'E-Rechnung' ? '📐 E-Rechnung (XML)'
                   : '📄 Rechnung';
   const retentionLine = inv.retention_until
-    ? `<span title="§ 14b UStG: Belege zu Leistungen an einem Grundstück 2 Jahre aufbewahren — auch Zahlungsbeleg, Bauvertrag und Abnahmeprotokoll. Keine Steuerberatung.">Aufbewahren bis: <strong>${fmtDate(inv.retention_until)}</strong> · §14b</span>`
+    ? `<span title="§ 14b UStG: Belege zu Leistungen an einem Grundstück 2 Jahre aufbewahren — auch Zahlungsbeleg, Bauvertrag und Abnahmeprotokoll. Tipp: Für Gewährleistung bei Baumängeln gilt zudem i.d.R. eine 5-jährige Verjährung ab Abnahme (§ 634a BGB) — Rechnung + Abnahmeprotokoll entsprechend länger behalten. Keine Steuer-/Rechtsberatung.">Aufbewahren bis: <strong>${fmtDate(inv.retention_until)}</strong> · §14b</span>`
     : '';
   meta.innerHTML = `
     <span>Typ: <strong>${typeLabel}</strong></span>
