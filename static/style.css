@@ -463,6 +463,28 @@ a { color: var(--accent); text-decoration: none; }
 }
 .ocr-meta strong { font-weight: 600; color: var(--text); }
 
+/* E-invoice line items (read-only positions table) */
+.edit-lines { margin: 0 0 14px; }
+.edit-lines .modal-section-label { margin-bottom: 6px; }
+.li-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: var(--bg-elev-2);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.li-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.li-table tr:last-child td { border-bottom: none; }
+.li-pos { color: var(--text-muted); width: 1%; white-space: nowrap; padding-right: 4px; }
+.li-desc { color: var(--text); }
+.li-desc .li-sub { display: block; color: var(--text-muted); font-size: 11px; margin-top: 2px; }
+.li-net { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text); }
+
 .modal-section {
   margin-top: 18px;
   padding-top: 14px;

@@ -145,6 +145,10 @@ kein OCR, kein Raten, kein Claude-Aufruf. Das ist exakt, sofort und kostenlos.
 Erkannt werden beide EN-16931-Syntaxen: **CII** (UN/CEFACT, ZUGFeRD/Factur-X) und
 **UBL** (OASIS, XRechnung). Solche Belege bekommen das Badge **„E-Rechnung"**.
 
+Zusätzlich liest die App die **einzelnen Rechnungspositionen** aus dem XML und zeigt sie
+read-only im Beleg-Detail (Beschreibung, Menge + Einheit, Netto-Betrag, MwSt-%). Die
+Positionsbeträge sind **netto** und summieren sich nicht zum Brutto-Gesamtbetrag des Belegs.
+
 Ist kein E-Rechnung-XML vorhanden, läuft alles wie gehabt über OCR / Claude.
 
 > **Einordnung:** Die gesetzliche E-Rechnungs-*Pflicht* gilt nur zwischen Unternehmen
@@ -255,6 +259,7 @@ Cookie-authentifiziert, gleiche Session wie das UI. Alle Endpoints unter `/api/*
 | `DELETE`| `/api/invoices/{id}`                  | Löschen (samt Datei + Thumbnail)               |
 | `GET`   | `/api/invoices/{id}/file`             | Original-Download                              |
 | `GET`   | `/api/invoices/{id}/thumbnail`        | JPG-Thumbnail                                  |
+| `GET`   | `/api/invoices/{id}/lines`            | E-Rechnung-Positionen (aus dem XML, netto)     |
 | `POST`  | `/api/export`                         | `{invoice_ids, label, mark_submitted}` → ZIP   |
 | `GET`   | `/api/export/{id}/download`           | Re-Download                                    |
 | `GET`   | `/api/submissions`                    | Liste vergangener Einreichungen                |

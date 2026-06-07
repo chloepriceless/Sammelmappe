@@ -354,8 +354,45 @@ function openEdit(inv) {
   // Reset any leftover diff panel from a previous invoice
   $('#reocr-diff').classList.add('hidden');
 
+  // E-invoice positions (read-only, lazy — only for structured e-invoices)
+  renderEditLines(inv);
+
   $('#modal-edit').classList.add('visible');
   refreshReocrButtons();
+}
+
+// Fetch + render the invoice positions read straight from the e-invoice XML.
+// View-only nicety: never blocks the dialog, fails silently.
+async function renderEditLines(inv) {
+  const box = $('#edit-lines');
+  box.classList.add('hidden');
+  box.innerHTML = '';
+  if (!inv || inv.doc_type !== 'E-Rechnung') return;
+  try {
+    const data = await api(`/api/invoices/${inv.id}/lines`);
+    if (state.currentEdit?.id !== inv.id) return;  // a different invoice opened meanwhile
+    if (!data || !data.available || !data.lines.length) return;
+    const rows = data.lines.map(l => {
+      const qtyNum = l.quantity != null ? String(l.quantity).replace('.', ',') : '';
+      const qty = qtyNum && l.unit_label ? `${qtyNum} ${escapeHtml(l.unit_label)}`
+                : qtyNum ? qtyNum : '';
+      const vat = l.vat_percent != null ? ` · ${String(l.vat_percent).replace('.', ',')} %` : '';
+      const sub = (qty || vat) ? `<span class="li-sub">${qty}${vat}</span>` : '';
+      const net = l.net_amount != null ? fmtEUR(l.net_amount) : '';
+      return `<tr>
+        <td class="li-pos">${escapeHtml(l.position || '')}</td>
+        <td class="li-desc">${escapeHtml(l.description || '—')}${sub}</td>
+        <td class="li-net">${net}</td>
+      </tr>`;
+    }).join('');
+    box.innerHTML = `
+      <div class="modal-section-label">Positionen (aus E-Rechnung)</div>
+      <table class="li-table"><tbody>${rows}</tbody></table>
+      <div class="hint">Beträge netto · direkt aus dem XML${data.truncated ? ' · Liste gekürzt' : ''}</div>`;
+    box.classList.remove('hidden');
+  } catch (e) {
+    /* view-only — swallow errors, leave section hidden */
+  }
 }
 function closeEdit() {
   $('#modal-edit').classList.remove('visible');

@@ -4,6 +4,26 @@ Alle nennenswerten Änderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.3.0] — 2026-06-07
+
+### Added
+- **E-Rechnung-Positionen im Beleg-Detail.** Bei strukturierten E-Rechnungen
+  (ZUGFeRD / Factur-X / XRechnung) zeigt der „Beleg bearbeiten"-Dialog jetzt die
+  **einzelnen Rechnungspositionen** (Beschreibung, Menge + Einheit, Netto-Betrag,
+  MwSt-%) — direkt aus dem strukturierten XML gelesen, kein OCR/Raten. Read-only.
+- Neuer API-Endpoint `GET /api/invoices/{id}/lines` — liefert die Positionen
+  **on-demand aus der gespeicherten Originaldatei** (nicht persistiert, daher keine
+  DB-Migration und sofort für bereits hochgeladene E-Rechnungen verfügbar). Beträge
+  sind **netto** pro Position (EN 16931 BT-131) und summieren sich nicht zum Brutto-
+  Gesamtbetrag des Headers. UN/ECE-Einheiten-Codes werden auf kurze Labels gemappt
+  (C62 → Stk, HUR → Std, MTK → m², …).
+
+### Security
+- Positions-Parsing ist gedeckelt (`_MAX_LINES = 1000`) und vollständig best-effort
+  gekapselt: eine fehlerhafte Position kann die Header-Extraktion nicht brechen. Codex-
+  Refute-Review vor Merge (kein neuer DoS/Traversal/Regressions-Befund). Der Endpoint
+  liest einen server-generierten Dateinamen, kein User-Input → kein Path-Traversal.
+
 ## [1.2.0] — 2026-06-07
 
 ### Added
@@ -73,6 +93,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Status-Tracking, Einreichungs-Historie, Duplikat-Erkennung, Kategorien,
   Auth (Argon2), Proxmox-/Docker-Setup.
 
+[1.3.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.3.0
 [1.2.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.2.0
 [1.1.1]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.1.1
 [1.1.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.1.0

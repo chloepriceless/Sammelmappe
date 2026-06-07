@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from .. import ocr
+from .. import einvoice, ocr
 from ..auth import require_auth
 from ..config import settings
 from ..db import get_db
@@ -175,6 +175,50 @@ def get_invoice(invoice_id: int, db: Session = Depends(get_db)):
     if not inv:
         raise HTTPException(status_code=404)
     return _invoice_to_dict(inv)
+
+
+@router.get("/{invoice_id}/lines")
+def get_invoice_lines(invoice_id: int, db: Session = Depends(get_db)):
+    """Invoice positions (Rechnungspositionen) read straight from the structured
+    e-invoice XML. Derived on demand from the stored original file — not persisted,
+    always consistent with the source, no schema migration. Empty/``available:false``
+    for OCR/scanned invoices that carry no machine-readable positions.
+
+    Amounts are NET per line (BT-131) and do NOT sum to the gross header total."""
+    inv = db.get(Invoice, invoice_id)
+    if not inv:
+        raise HTTPException(status_code=404)
+
+    empty = {"available": False, "profile": None, "truncated": False, "lines": []}
+    src = settings.invoices_dir / inv.filename
+    if not src.exists():
+        return empty
+    try:
+        data = einvoice.find_einvoice(src, inv.mime)
+    except Exception:
+        log.exception("e-invoice line extraction failed for invoice %s", invoice_id)
+        return empty
+    if data is None:
+        return empty
+
+    return {
+        "available": bool(data.lines),
+        "profile": data.profile or None,
+        "truncated": data.lines_truncated,
+        "lines": [
+            {
+                "position": ln.position,
+                "description": ln.description,
+                "quantity": ln.quantity,
+                "unit": ln.unit,
+                "unit_label": ln.unit_label,
+                "unit_price": ln.unit_price,
+                "net_amount": ln.net_amount,
+                "vat_percent": ln.vat_percent,
+            }
+            for ln in data.lines
+        ],
+    }
 
 
 @router.patch("/{invoice_id}")

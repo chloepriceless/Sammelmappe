@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import logging
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
@@ -59,6 +59,35 @@ _MAX_CANDIDATES = 8
 # credit note keeps the CrossIndustryInvoice root, so the root check alone misses it.
 _CREDIT_NOTE_TYPE_CODES = {"81", "83", "261", "262", "296", "308", "381", "396", "532"}
 
+# Cap the number of line items we extract from a single (untrusted) invoice so a
+# pathological XML can't blow up the response. Real invoices are far below this.
+_MAX_LINES = 1000
+
+# UN/ECE Recommendation 20 unit codes → short German labels. Covers the units that
+# actually show up on German construction invoices; unknown codes fall back to the
+# raw code so nothing is lost.
+_UNIT_LABELS = {
+    "C62": "Stk", "H87": "Stk", "XPP": "Stk", "EA": "Stk", "PCE": "Stk", "NAR": "Stk",
+    "HUR": "Std", "MIN": "Min", "DAY": "Tag", "WEE": "Wo", "MON": "Monat", "ANN": "Jahr",
+    "MTR": "m", "MTK": "m²", "MTQ": "m³", "MMT": "mm", "CMT": "cm", "KMT": "km",
+    "LTR": "l", "MLT": "ml", "KGM": "kg", "GRM": "g", "TNE": "t",
+    "PA": "Pack", "SET": "Set", "P1": "%", "ZZ": "",
+}
+
+
+@dataclass
+class EInvoiceLine:
+    """A single invoice position (EN 16931 BG-25). Amounts are NET (BT-131) and do
+    NOT add up to the gross header total — that's expected."""
+    position: str | None = None     # line number / BT-126
+    description: str | None = None   # item name / BT-153
+    quantity: float | None = None    # billed/invoiced quantity / BT-129
+    unit: str | None = None          # UN/ECE Rec 20 code / BT-130
+    unit_label: str | None = None    # human label for ``unit`` (or the raw code)
+    unit_price: float | None = None  # net unit price / BT-146
+    net_amount: float | None = None  # line net total / BT-131
+    vat_percent: float | None = None  # VAT rate on the line / BT-152
+
 
 @dataclass
 class EInvoiceData:
@@ -68,6 +97,8 @@ class EInvoiceData:
     invoice_date: date | None = None
     invoice_number: str | None = None
     profile: str = ""  # "cii" | "ubl"
+    lines: list[EInvoiceLine] = field(default_factory=list)
+    lines_truncated: bool = False  # True if the invoice had more than _MAX_LINES
 
 
 # --- small XML helpers (local-name based) -----------------------------------
@@ -131,6 +162,32 @@ def _currency_id(elem) -> str | None:
     return cur.strip().upper()[:3] if cur else None
 
 
+def _unit_code(elem) -> str | None:
+    """Read the ``unitCode`` attribute off a quantity element, if present."""
+    if elem is None:
+        return None
+    code = elem.get("unitCode")
+    return code.strip() if code and code.strip() else None
+
+
+def _make_line(position, description, quantity, unit, unit_price, net_amount, vat_percent) -> EInvoiceLine | None:
+    """Build a line, or None if it carries nothing worth showing (skips the
+    degenerate ID-only stubs some XMLs include)."""
+    if description is None and net_amount is None and quantity is None and unit_price is None:
+        return None
+    label = _UNIT_LABELS.get(unit.upper(), unit) if unit else None
+    return EInvoiceLine(
+        position=position,
+        description=description,
+        quantity=quantity,
+        unit=unit,
+        unit_label=label,
+        unit_price=unit_price,
+        net_amount=net_amount,
+        vat_percent=vat_percent,
+    )
+
+
 def _parse_xml_date(raw: str | None) -> date | None:
     """Handle CII ``YYYYMMDD`` (format 102) and UBL ISO ``YYYY-MM-DD``."""
     if not raw:
@@ -174,7 +231,7 @@ def _parse_cii(root) -> EInvoiceData | None:
 
     currency = _path_text(settlement, "InvoiceCurrencyCode") or _currency_id(grand) or "EUR"
 
-    return EInvoiceData(
+    data = EInvoiceData(
         vendor=vendor,
         amount=amount,
         currency=currency.upper()[:3],
@@ -182,6 +239,46 @@ def _parse_cii(root) -> EInvoiceData | None:
         invoice_number=number,
         profile="cii",
     )
+    data.lines, data.lines_truncated = _parse_cii_lines(txn)
+    return data
+
+
+def _parse_cii_lines(txn) -> tuple[list[EInvoiceLine], bool]:
+    """Extract CII positions (IncludedSupplyChainTradeLineItem). Best-effort and
+    never raises — a malformed line must not break header extraction."""
+    lines: list[EInvoiceLine] = []
+    truncated = False
+    if txn is None:
+        return lines, truncated
+    try:
+        for li in txn:
+            if _local(li.tag) != "IncludedSupplyChainTradeLineItem":
+                continue
+            if len(lines) >= _MAX_LINES:
+                truncated = True
+                break
+            try:
+                qty_el = _path(li, "SpecifiedLineTradeDelivery", "BilledQuantity")
+                settle = _first_child(li, "SpecifiedLineTradeSettlement")
+                line = _make_line(
+                    position=_path_text(li, "AssociatedDocumentLineDocument", "LineID"),
+                    description=_path_text(li, "SpecifiedTradeProduct", "Name"),
+                    quantity=_to_float(_text(qty_el)),
+                    unit=_unit_code(qty_el),
+                    unit_price=_to_float(_path_text(
+                        li, "SpecifiedLineTradeAgreement", "NetPriceProductTradePrice", "ChargeAmount")),
+                    net_amount=_to_float(_path_text(
+                        settle, "SpecifiedTradeSettlementLineMonetarySummation", "LineTotalAmount")),
+                    vat_percent=_to_float(_path_text(settle, "ApplicableTradeTax", "RateApplicablePercent")),
+                )
+                if line is not None:
+                    lines.append(line)
+            except Exception:
+                log.debug("skipping unparseable CII line", exc_info=True)
+                continue
+    except Exception:
+        log.debug("CII line extraction failed", exc_info=True)
+    return lines, truncated
 
 
 # --- UBL (OASIS Universal Business Language) --------------------------------
@@ -209,7 +306,7 @@ def _parse_ubl(root) -> EInvoiceData | None:
 
     currency = _path_text(root, "DocumentCurrencyCode") or _currency_id(incl) or "EUR"
 
-    return EInvoiceData(
+    data = EInvoiceData(
         vendor=vendor,
         amount=amount,
         currency=currency.upper()[:3],
@@ -217,6 +314,43 @@ def _parse_ubl(root) -> EInvoiceData | None:
         invoice_number=number,
         profile="ubl",
     )
+    data.lines, data.lines_truncated = _parse_ubl_lines(root)
+    return data
+
+
+def _parse_ubl_lines(root) -> tuple[list[EInvoiceLine], bool]:
+    """Extract UBL positions (InvoiceLine). Best-effort and never raises."""
+    lines: list[EInvoiceLine] = []
+    truncated = False
+    if root is None:
+        return lines, truncated
+    try:
+        for li in root:
+            if _local(li.tag) != "InvoiceLine":
+                continue
+            if len(lines) >= _MAX_LINES:
+                truncated = True
+                break
+            try:
+                qty_el = _first_child(li, "InvoicedQuantity")
+                item = _first_child(li, "Item")
+                line = _make_line(
+                    position=_path_text(li, "ID"),
+                    description=_path_text(item, "Name") or _path_text(item, "Description"),
+                    quantity=_to_float(_text(qty_el)),
+                    unit=_unit_code(qty_el),
+                    unit_price=_to_float(_path_text(li, "Price", "PriceAmount")),
+                    net_amount=_to_float(_path_text(li, "LineExtensionAmount")),
+                    vat_percent=_to_float(_path_text(item, "ClassifiedTaxCategory", "Percent")),
+                )
+                if line is not None:
+                    lines.append(line)
+            except Exception:
+                log.debug("skipping unparseable UBL line", exc_info=True)
+                continue
+    except Exception:
+        log.debug("UBL line extraction failed", exc_info=True)
+    return lines, truncated
 
 
 # --- Public XML entrypoint --------------------------------------------------
