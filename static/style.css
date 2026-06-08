@@ -257,6 +257,36 @@ a { color: var(--accent); text-decoration: none; }
   font-weight: 600;
 }
 .card .right { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 6px;}
+.card-open {
+  margin-top: 2px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.card-open:hover { background: var(--accent-soft); }
+.card-open:active { transform: scale(0.97); }
+
+/* "Alle offenen auswählen" toolbar above the list */
+.list-actions { display: flex; justify-content: flex-end; margin: 2px 0 8px; }
+.chip-action {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.chip-action:hover { background: var(--accent-soft); }
+.chip-action:disabled { color: var(--text-muted); cursor: default; opacity: 0.6; }
+.chip-action:disabled:hover { background: var(--bg-elev); }
 .card .amount {
   font-weight: 700;
   font-size: 16px;

@@ -4,6 +4,16 @@ Alle nennenswerten Änderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.5.0] — 2026-06-08
+
+### Added
+- **„Alle offenen auswählen"-Button** über der Beleg-Liste — wählt alle offenen Belege
+  (mit erkanntem Betrag) auf einen Schlag für den Export aus; ein zweiter Klick hebt die
+  Auswahl wieder auf (Select-all / Deselect-all). Ist deaktiviert, wenn nichts auswählbar ist.
+- **„Öffnen"-Button pro Beleg** — öffnet das Detail/Bearbeiten mit einem **einzelnen Klick**,
+  statt Doppelklick (Desktop) bzw. langem Tippen (Handy). Ein Klick auf die Karte wählt sie
+  weiterhin für den Export aus; Doppelklick/Long-Press funktionieren wie gehabt weiter.
+
 ## [1.4.0] — 2026-06-07
 
 ### Added
@@ -118,6 +128,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
   Status-Tracking, Einreichungs-Historie, Duplikat-Erkennung, Kategorien,
   Auth (Argon2), Proxmox-/Docker-Setup.
 
+[1.5.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.5.0
 [1.4.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.4.0
 [1.3.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.3.0
 [1.2.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.2.0

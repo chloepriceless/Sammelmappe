@@ -81,6 +81,7 @@ function renderList() {
   const list = $('#invoice-list');
   const empty = $('#empty-state');
   list.innerHTML = '';
+  updateSelectAllLabel();
   if (!state.invoices.length) {
     empty.classList.remove('hidden');
     return;
@@ -139,6 +140,18 @@ function renderCard(inv) {
   }
   right.appendChild(badge);
 
+  // Explicit single-click "Öffnen" — opens the detail/edit dialog without the
+  // double-click (desktop) or long-press (mobile). stopPropagation so it doesn't
+  // also toggle the card's export selection.
+  const openBtn = document.createElement('button');
+  openBtn.className = 'card-open';
+  openBtn.type = 'button';
+  openBtn.title = 'Beleg öffnen';
+  openBtn.setAttribute('aria-label', 'Beleg öffnen');
+  openBtn.textContent = 'Öffnen';
+  openBtn.addEventListener('click', (e) => { e.stopPropagation(); openEdit(inv); });
+  right.appendChild(openBtn);
+
   card.appendChild(thumb);
   card.appendChild(meta);
   card.appendChild(right);
@@ -193,6 +206,34 @@ function clearSelection() {
   renderList();
   updateSelbar();
 }
+
+// Invoices that can go into an export: open (not yet submitted) and with an amount.
+function selectableInvoices() {
+  return state.invoices.filter(i => i.status !== 'submitted' && i.amount != null);
+}
+
+// Select all open invoices in the current view at once — or deselect them all if
+// they're already selected (the button doubles as select-all / deselect-all).
+function selectAllOpen() {
+  const selectable = selectableInvoices();
+  if (!selectable.length) {
+    toast('Keine offenen Belege mit Betrag in dieser Ansicht.', 'warn');
+    return;
+  }
+  const allSelected = selectable.every(i => state.selected.has(i.id));
+  selectable.forEach(i => allSelected ? state.selected.delete(i.id) : state.selected.add(i.id));
+  renderList();
+  updateSelbar();
+}
+
+function updateSelectAllLabel() {
+  const btn = $('#select-all-open');
+  if (!btn) return;
+  const selectable = selectableInvoices();
+  const allSelected = selectable.length > 0 && selectable.every(i => state.selected.has(i.id));
+  btn.textContent = allSelected ? 'Alle abwählen' : 'Alle offenen auswählen';
+  btn.disabled = selectable.length === 0;
+}
 function updateSelbar() {
   const bar = $('#selbar');
   if (state.selected.size === 0) {
@@ -207,6 +248,7 @@ function updateSelbar() {
 }
 $('#sel-clear').addEventListener('click', clearSelection);
 $('#sel-export').addEventListener('click', () => openExport());
+$('#select-all-open').addEventListener('click', selectAllOpen);
 
 // --- Filter + Search ------------------------------------------------------
 $$('.chip').forEach(c => c.addEventListener('click', () => {
