@@ -62,7 +62,7 @@ def category_subtotals(invoices) -> list[tuple[str, float]]:
 
 def _retention_for(inv) -> date | None:
     """§14b retention date for one invoice — invoice date preferred, else upload time
-    (mirrors routes/invoices._retention_until)."""
+    (mirrors the retention fields in routes/invoices._invoice_to_dict)."""
     return retention_until_date(getattr(inv, "invoice_date", None) or getattr(inv, "created_at", None))
 
 

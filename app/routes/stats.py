@@ -8,6 +8,7 @@ from ..auth import require_auth
 from ..db import get_db
 from ..models import Invoice, Submission
 from ..runtime_config import get_runtime
+from ..utils import retention_until_date, retention_status, RETENTION_WARN_DAYS
 from .. import section35a
 
 router = APIRouter(prefix="/api", tags=["stats"], dependencies=[Depends(require_auth)])
@@ -45,6 +46,32 @@ def stats(db: Session = Depends(get_db)):
             for c in categories
         ],
         "submissions_total": submissions_count,
+        "retention": _retention_summary(db),
+    }
+
+
+def _retention_summary(db: Session, today: date | None = None) -> dict:
+    """§14b retention overview: how many invoices end their retention period
+    soon / have passed it, plus the earliest upcoming end date. Computed in
+    Python (invoice_date with created_at fallback — awkward in portable SQL,
+    and the dataset is small)."""
+    expiring_soon = 0
+    expired = 0
+    next_expiry: date | None = None
+    for (inv_date, created) in db.query(Invoice.invoice_date, Invoice.created_at).all():
+        until = retention_until_date(inv_date or created)
+        status = retention_status(until, today)
+        if status == "expiring_soon":
+            expiring_soon += 1
+        elif status == "expired":
+            expired += 1
+        if status in ("active", "expiring_soon") and (next_expiry is None or until < next_expiry):
+            next_expiry = until
+    return {
+        "warn_days": RETENTION_WARN_DAYS,
+        "expiring_soon": expiring_soon,
+        "expired": expired,
+        "next_expiry": next_expiry.isoformat() if next_expiry else None,
     }
 
 

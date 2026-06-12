@@ -45,3 +45,26 @@ def retention_until_date(basis: date | datetime | None, years: int = 2) -> date 
     if basis is None:
         return None
     return date(basis.year + years, 12, 31)
+
+
+# Days before the §14b retention end at which we start flagging an invoice.
+RETENTION_WARN_DAYS = 90
+
+
+def retention_status(until: date | None, today: date | None = None) -> str | None:
+    """Coarse state of the §14b retention period for UI hints.
+
+    Returns ``None`` (no retention date), ``"active"``, ``"expiring_soon"``
+    (within ``RETENTION_WARN_DAYS`` days, including the final day) or
+    ``"expired"``. Informational only — expiry is NOT a deletion hint
+    (§ 634a BGB warranty often warrants keeping documents longer).
+    """
+    if until is None:
+        return None
+    if today is None:
+        today = date.today()
+    if today > until:
+        return "expired"
+    if (until - today).days <= RETENTION_WARN_DAYS:
+        return "expiring_soon"
+    return "active"

@@ -171,8 +171,11 @@ sind nicht nur die Rechnung, sondern auch **Zahlungsbeleg, Bauvertrag und
 Abnahmeprotokoll**.
 
 Sammelmappe zeigt dir darum im Beleg-Detail ein **„Aufbewahren bis"-Datum**
-(Rechnungsjahr + 2 Jahre, gerechnet ab Jahresende). *Stand 06/2026, keine
-Steuerberatung — im Zweifel mit dem Steuerberater klären.*
+(Rechnungsjahr + 2 Jahre, gerechnet ab Jahresende) und **warnt proaktiv**, wenn
+die Mindestfrist eines Belegs in den nächsten 90 Tagen endet oder bereits erreicht
+ist (Hinweis im Beleg-Detail + Karte im Statistik-Tab). Das Fristende ist bewusst
+**keine Entsorgungs-Empfehlung** — siehe Gewährleistung unten. *Stand 06/2026,
+keine Steuerberatung — im Zweifel mit dem Steuerberater klären.*
 
 > **Gewährleistung (§ 634a BGB):** Unabhängig von der steuerlichen Frist gilt für
 > Mängelansprüche an einem **Bauwerk** i.d.R. eine **5-jährige Verjährung ab Abnahme**.

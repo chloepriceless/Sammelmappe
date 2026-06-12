@@ -385,8 +385,13 @@ function openEdit(inv) {
   const typeLabel = docType === 'Kassenbeleg' ? '🧾 Kassenbeleg (TSE-QR)'
                   : docType === 'E-Rechnung' ? '📐 E-Rechnung (XML)'
                   : '📄 Rechnung';
+  const retentionFlag = inv.retention_status === 'expired'
+    ? ' <strong style="color:var(--danger)">— Mindestfrist erreicht (§634a beachten)</strong>'
+    : inv.retention_status === 'expiring_soon'
+      ? ' <strong style="color:var(--warning)">— Mindestfrist endet bald</strong>'
+      : '';
   const retentionLine = inv.retention_until
-    ? `<span title="§ 14b UStG: Belege zu Leistungen an einem Grundstück 2 Jahre aufbewahren — auch Zahlungsbeleg, Bauvertrag und Abnahmeprotokoll. Tipp: Für Gewährleistung bei Baumängeln gilt zudem i.d.R. eine 5-jährige Verjährung ab Abnahme (§ 634a BGB) — Rechnung + Abnahmeprotokoll entsprechend länger behalten. Keine Steuer-/Rechtsberatung.">Aufbewahren bis: <strong>${fmtDate(inv.retention_until)}</strong> · §14b</span>`
+    ? `<span title="§ 14b UStG: Belege zu Leistungen an einem Grundstück 2 Jahre aufbewahren — auch Zahlungsbeleg, Bauvertrag und Abnahmeprotokoll. Tipp: Für Gewährleistung bei Baumängeln gilt zudem i.d.R. eine 5-jährige Verjährung ab Abnahme (§ 634a BGB) — Rechnung + Abnahmeprotokoll entsprechend länger behalten. Keine Steuer-/Rechtsberatung.">Aufbewahren bis: <strong>${fmtDate(inv.retention_until)}</strong> · §14b${retentionFlag}</span>`
     : '';
   meta.innerHTML = `
     <span>Typ: <strong>${typeLabel}</strong></span>
@@ -887,6 +892,7 @@ async function loadStats() {
       <div class="stat success"><div class="label">Eingereicht</div><div class="value">${fmtEUR(submitted.sum)}</div><div style="font-size:13px;color:var(--text-muted);margin-top:2px">${submitted.count} Rechnungen</div></div>
       <div class="stat"><div class="label">Einreichungen</div><div class="value">${s.submissions_total}</div></div>
       <div class="stat"><div class="label">Gesamt</div><div class="value">${fmtEUR(open.sum + submitted.sum)}</div></div>
+      ${renderRetentionStat(s.retention)}
     `;
     const cats = $('#stats-categories');
     cats.innerHTML = '';
@@ -905,6 +911,25 @@ async function loadStats() {
   } catch (e) {
     if (e.message !== 'unauth') toast(`Laden fehlgeschlagen: ${e.message}`, 'error');
   }
+}
+
+// §14b retention overview card — only shown when something needs attention.
+// Expiry is informational, NOT a deletion hint (§634a warranty: 5 y from
+// acceptance often warrants keeping construction documents longer).
+function renderRetentionStat(r) {
+  if (!r) return '';
+  const soon = Number(r.expiring_soon) || 0;
+  const past = Number(r.expired) || 0;
+  if (soon === 0 && past === 0) return '';
+  const parts = [];
+  if (soon > 0) parts.push(`${soon} endet in ≤${Number(r.warn_days) || 90} Tagen`);
+  if (past > 0) parts.push(`${past} über Mindestfrist`);
+  return `
+    <div class="stat warn" title="§ 14b UStG: 2-Jahres-Mindestaufbewahrung. Fristende heißt NICHT entsorgen — für die Gewährleistung bei Baumängeln (§ 634a BGB, i.d.R. 5 Jahre ab Abnahme) Rechnung + Abnahmeprotokoll besser länger behalten. Keine Steuer-/Rechtsberatung.">
+      <div class="label">Aufbewahrung (§14b)</div>
+      <div class="value" style="font-size:18px">${parts.join(' · ')}</div>
+      <div style="font-size:13px;color:var(--text-muted);margin-top:2px">Vor dem Entsorgen: § 634a-Gewährleistung beachten</div>
+    </div>`;
 }
 
 const S35A_REASONS = {

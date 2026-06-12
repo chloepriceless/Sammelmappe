@@ -4,6 +4,17 @@ Alle nennenswerten Änderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.6.0] — 2026-06-12
+
+### Added
+- **§ 14b-Aufbewahrungs-Warnung.** Die App weist jetzt proaktiv darauf hin, wenn
+  die 2-Jahres-Mindestaufbewahrungsfrist eines Belegs **in ≤ 90 Tagen endet** oder
+  **bereits erreicht** ist: farbiger Hinweis an der „Aufbewahren bis"-Zeile im
+  Beleg-Detail + eine „Aufbewahrung (§14b)"-Karte im Statistik-Tab (erscheint nur,
+  wenn es etwas zu melden gibt). Bewusst **keine Entsorgungs-Empfehlung** — der
+  Hinweis erinnert zugleich an die 5-jährige Gewährleistung (§ 634a BGB). Neue
+  API-Felder: `retention_status` pro Beleg, `retention`-Block in `GET /api/stats`.
+
 ## [1.5.0] — 2026-06-08
 
 ### Added
