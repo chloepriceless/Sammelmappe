@@ -4,6 +4,32 @@ Alle nennenswerten Änderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.6.1] — 2026-06-13
+
+### Fixed
+- **Laufzeit-Einstellungen: falscher Vorgabewert blieb bis zu 60 s im Cache.**
+  Der TTL-Cache in `runtime_config` speicherte den bereits mit dem Vorgabewert
+  aufgelösten Wert nur unter dem Schlüssel. Da derselbe Schlüssel an
+  verschiedenen Stellen mit unterschiedlichen Vorgaben gelesen wird — speziell
+  `anthropic_api_key`: `None` auf der Einstellungs-Seite vs. der `.env`-Schlüssel
+  im OCR-Pfad — konnte bei nur per `.env` gesetztem Key (ohne UI-Override) für bis
+  zu 60 s gewinnen, wer zuerst cachte: die OCR-Erkennung sah dann „kein API-Key"
+  (Claude-OCR fiel kurz aus) bzw. die UI wies den `.env`-Key fälschlich als Quelle
+  „db" aus. Fix: es wird nur der rohe DB-Wert gecacht, der Vorgabewert erst beim
+  Lesen angewandt → Cache ist vorgabe-unabhängig.
+- **`datetime.utcnow()` durchgängig ersetzt** durch `datetime.now(timezone.utc)`
+  (Python-3.12-Deprecation). Verhalten unverändert (naive UTC bleibt naive UTC),
+  keine Schema-Migration. Testsuite jetzt warnungsfrei.
+
+### Tests
+- **+48 Tests.** Erstmals Coverage für das sicherheitskritische Auth-Modul
+  (Argon2-Passwort-Hash, Session-Cookie-Signatur inkl. Tamper-/Falsch-Key-/
+  Falsch-Salt-Abweisung, `require_auth`: `/api/*` → 401, HTML → Redirect `/login`)
+  sowie für `runtime_config` (TTL-Cache, Leer→Vorgabe, Löschen, Invalidate inkl.
+  Regressionstest für den obigen Fix) und die `/api/settings`-Logik
+  (Key-Maskierung ohne Leak, db/env/none-Priorität, Schwellwert-Koersion,
+  Eingabe-Validierung). 167 Tests grün, 0 Warnungen.
+
 ## [1.6.0] — 2026-06-12
 
 ### Added
