@@ -20,18 +20,26 @@ _lock = Lock()
 
 
 def get_runtime(key: str, default: str | None = None) -> str | None:
-    """Read setting from DB (cached), fall back to ``default``."""
+    """Read setting from DB (cached), fall back to ``default``.
+
+    The cache stores the *raw* DB value (or ``None`` for "no/empty row"), never
+    the default. Applying the default only at read time keeps the cache
+    default-independent — otherwise the first caller's default would "stick" and
+    be served to other call sites that pass a different default for the same key
+    (e.g. ``anthropic_api_key`` is read with default ``None`` on the settings
+    page but with the env key in the OCR path)."""
     now = time()
     with _lock:
         cached = _cache.get(key)
         if cached and cached[1] > now:
-            return cached[0]
+            stored = cached[0]
+            return stored if stored else default
     with session_scope() as db:
         row = db.get(Setting, key)
-        value = row.value if row and row.value else default
+        stored = row.value if row else None
     with _lock:
-        _cache[key] = (value, now + _TTL_SECONDS)
-    return value
+        _cache[key] = (stored, now + _TTL_SECONDS)
+    return stored if stored else default
 
 
 def set_runtime(key: str, value: str | None) -> None:
