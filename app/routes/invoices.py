@@ -1,7 +1,7 @@
 import logging
 import math
 import secrets
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -79,7 +79,7 @@ async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get
         raise HTTPException(status_code=400, detail="Leere Datei")
 
     suffix = Path(file.filename or "upload").suffix.lower() or ".bin"
-    stored_name = f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(4)}{suffix}"
+    stored_name = f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(4)}{suffix}"
     dest = settings.invoices_dir / stored_name
     dest.write_bytes(raw)
 

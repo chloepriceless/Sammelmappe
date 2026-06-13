@@ -1,4 +1,4 @@
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from sqlalchemy import String, Integer, Float, DateTime, Date, Text, ForeignKey, Boolean, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -49,8 +49,8 @@ class Invoice(Base):
     ocr_raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     manually_edited: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     submission: Mapped["Submission | None"] = relationship(back_populates="invoices")
 
@@ -64,6 +64,6 @@ class Submission(Base):
     total_amount: Mapped[float] = mapped_column(Float, nullable=False)
     invoice_count: Mapped[int] = mapped_column(Integer, nullable=False)
     zip_filename: Mapped[str] = mapped_column(String, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), index=True)
 
     invoices: Mapped[list[Invoice]] = relationship(back_populates="submission")
