@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .auth import SESSION_COOKIE, _validate_token, is_initialized
-from .config import settings
+from .config import settings, assert_secure_secret_key
 from .db import init_db
 from .routes import auth as auth_routes
 from .routes import export as export_routes
@@ -19,6 +19,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 log = logging.getLogger("sammelmappe")
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+
+# Refuse to start with a default/placeholder SECRET_KEY (forgeable session cookies).
+assert_secure_secret_key()
 
 app = FastAPI(title="Sammelmappe", version=__version__)
 init_db()

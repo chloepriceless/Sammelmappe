@@ -13,7 +13,8 @@ services:
       HOST: 0.0.0.0
       PORT: 8080
       # Generate with: python3 -c "import secrets;print(secrets.token_urlsafe(32))"
-      SECRET_KEY: "${SECRET_KEY:-change-me-now}"
+      # No insecure default — compose refuses to start without a real SECRET_KEY.
+      SECRET_KEY: "${SECRET_KEY:?SECRET_KEY muss gesetzt sein (z.B. in einer .env-Datei)}"
       SESSION_HOURS: "720"
       TESSERACT_CMD: tesseract
       TESSERACT_LANG: "deu+eng"

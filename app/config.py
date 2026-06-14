@@ -37,3 +37,29 @@ class Settings(BaseSettings):
 settings = Settings()
 settings.invoices_dir.mkdir(parents=True, exist_ok=True)
 settings.thumbnails_dir.mkdir(parents=True, exist_ok=True)
+
+
+# Obvious placeholders that must never sign production session cookies.
+INSECURE_SECRET_KEYS = {
+    "",
+    "change-me",
+    "change-me-now",
+    "change-me-to-random-string-on-install",
+}
+
+
+def assert_secure_secret_key(s: "Settings | None" = None) -> None:
+    """Fail-fast guard against running with a default/placeholder SECRET_KEY.
+
+    auth.py signs session cookies with ``settings.secret_key`` — a known default
+    makes those cookies forgeable (account takeover). Called from main.py at
+    import (= server start), NOT here and NOT as a pydantic validator, so merely
+    importing the config (tests, helper scripts) never trips it."""
+    s = s or settings
+    if (s.secret_key or "").strip() in INSECURE_SECRET_KEYS:
+        raise RuntimeError(
+            "Unsicherer oder fehlender SECRET_KEY. Setze eine zufällige "
+            "SECRET_KEY-Umgebungsvariable, z.B.:\n"
+            '    python -c "import secrets; print(secrets.token_urlsafe(32))"\n'
+            "Ohne sie sind die Session-Cookies fälschbar."
+        )
