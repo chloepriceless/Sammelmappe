@@ -1,0 +1,105 @@
+"""End-to-end tests for the central upload path (B4): upload_invoice had zero
+coverage. Drives POST /api/invoices through the FastAPI TestClient with auth
+bypassed, a temp DB + temp data dir, and OCR/thumbnail mocked (no Tesseract /
+Claude / poppler needed).
+
+Covers: 415 (disallowed MIME), 413 (oversize), 400 (empty), 409 (sha256 dup),
+and the happy path (200 + persisted invoice dict).
+"""
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app import ocr
+from app.auth import require_auth
+from app.config import settings
+from app.db import Base, get_db
+from app.main import app
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64  # plausible PNG-ish bytes; OCR is mocked anyway
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    eng = create_engine(
+        f"sqlite:///{tmp_path / 'up.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    Base.metadata.create_all(eng)
+    TestingSession = sessionmaker(bind=eng, autoflush=False, expire_on_commit=False)
+
+    def _get_db_override():
+        s = TestingSession()
+        try:
+            yield s
+        finally:
+            s.close()
+
+    data = tmp_path / "data"
+    (data / "invoices").mkdir(parents=True)
+    (data / "thumbnails").mkdir(parents=True)
+    monkeypatch.setattr(settings, "data_dir", data)
+
+    # No real OCR engines in the test environment.
+    monkeypatch.setattr(
+        ocr, "extract",
+        lambda *a, **k: ocr.ExtractedInvoice(engine="test", vendor="Test GmbH", amount=42.0),
+    )
+    monkeypatch.setattr(ocr, "make_thumbnail", lambda *a, **k: None)
+
+    app.dependency_overrides[require_auth] = lambda: None
+    app.dependency_overrides[get_db] = _get_db_override
+    try:
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_upload_happy_path(client):
+    r = client.post("/api/invoices", files={"file": ("rechnung.png", PNG, "image/png")})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["vendor"] == "Test GmbH"
+    assert body["amount"] == 42.0
+    assert body["status"] == "open"
+    assert body["ocr_engine"] == "test"
+
+
+def test_upload_rejects_disallowed_mime(client):
+    r = client.post("/api/invoices", files={"file": ("x.exe", b"MZ\x90\x00", "application/x-msdownload")})
+    assert r.status_code == 415
+
+
+def test_upload_rejects_empty_file(client):
+    r = client.post("/api/invoices", files={"file": ("empty.png", b"", "image/png")})
+    assert r.status_code == 400
+
+
+def test_upload_rejects_oversize(client, monkeypatch):
+    monkeypatch.setattr(settings, "max_upload_mib", 1)
+    big = b"\x89PNG" + b"\x00" * (1 * 1024 * 1024)  # just over 1 MiB
+    r = client.post("/api/invoices", files={"file": ("big.png", big, "image/png")})
+    assert r.status_code == 413
+
+
+def test_upload_duplicate_returns_409(client):
+    first = client.post("/api/invoices", files={"file": ("a.png", PNG, "image/png")})
+    assert first.status_code == 200
+    second = client.post("/api/invoices", files={"file": ("a.png", PNG, "image/png")})
+    assert second.status_code == 409
+    body = second.json()
+    assert body["duplicate"] is True
+    assert body["existing"]["id"] == first.json()["id"]
+
+
+def test_upload_persists_invoice_and_writes_file(client):
+    r = client.post("/api/invoices", files={"file": ("beleg.png", PNG, "image/png")})
+    assert r.status_code == 200
+    # the stored file landed in the temp invoices dir
+    stored = list((settings.data_dir / "invoices").glob("*.png"))
+    assert len(stored) == 1
+    # and it is listed back via the API
+    listing = client.get("/api/invoices")
+    assert listing.status_code == 200
+    assert any(i["id"] == r.json()["id"] for i in listing.json()["items"])
