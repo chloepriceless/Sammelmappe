@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
@@ -81,9 +82,11 @@ async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get
     suffix = Path(file.filename or "upload").suffix.lower() or ".bin"
     stored_name = f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(4)}{suffix}"
     dest = settings.invoices_dir / stored_name
-    dest.write_bytes(raw)
+    # Disk write + hashing + OCR are blocking; off-load to a thread so the async
+    # event loop stays free to serve other requests during a slow upload.
+    await run_in_threadpool(dest.write_bytes, raw)
 
-    file_hash = sha256_file(dest)
+    file_hash = await run_in_threadpool(sha256_file, dest)
 
     # Duplicate detection
     existing = db.query(Invoice).filter(Invoice.sha256 == file_hash).first()
@@ -100,7 +103,7 @@ async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get
 
     # OCR
     try:
-        result = ocr.extract(dest, file.content_type)
+        result = await run_in_threadpool(ocr.extract, dest, file.content_type)
     except Exception:
         log.exception("OCR failed")
         result = ocr.ExtractedInvoice(engine="failed")
@@ -108,7 +111,7 @@ async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get
     # Thumbnail
     thumb_path = settings.thumbnails_dir / f"{dest.stem}.jpg"
     try:
-        ocr.make_thumbnail(dest, thumb_path)
+        await run_in_threadpool(ocr.make_thumbnail, dest, thumb_path)
     except Exception:
         log.exception("Thumbnail generation failed")
 
