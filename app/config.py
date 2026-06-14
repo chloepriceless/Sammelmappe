@@ -10,6 +10,13 @@ class Settings(BaseSettings):
     secret_key: str = "change-me"
     session_hours: int = 720
 
+    # Comma-separated proxy IPs whose X-Forwarded-For header may be trusted to
+    # carry the real client IP. Empty (default) = trust nobody → use the direct
+    # transport peer. Set this to your reverse-proxy's IP so the login rate-limit
+    # keys on the real client instead of the proxy (avoids one client locking out
+    # everyone behind the proxy).
+    trusted_proxies: str = ""
+
     tesseract_cmd: str = "tesseract"
     tesseract_lang: str = "deu+eng"
 
@@ -32,6 +39,10 @@ class Settings(BaseSettings):
     @property
     def db_path(self) -> Path:
         return self.data_dir / "app.db"
+
+    @property
+    def trusted_proxies_set(self) -> set[str]:
+        return {p.strip() for p in self.trusted_proxies.split(",") if p.strip()}
 
 
 settings = Settings()

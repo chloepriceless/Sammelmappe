@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Form, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 
-from .. import auth
+from .. import auth, login_guard
 from ..config import settings
 
 router = APIRouter(tags=["auth"])
@@ -26,11 +26,21 @@ def setup(password: str = Form(...), password_confirm: str = Form(...)):
 
 
 @router.post("/api/auth/login")
-def login(password: str = Form(...)):
+def login(request: Request, password: str = Form(...)):
     if not auth.is_initialized():
         raise HTTPException(status_code=400, detail="nicht eingerichtet")
+    ip = login_guard.client_ip(request)
+    retry_after = login_guard.seconds_until_unblock(ip)
+    if retry_after > 0:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Zu viele Fehlversuche. Bitte später erneut versuchen.",
+            headers={"Retry-After": str(retry_after)},
+        )
     if not auth.verify_password(password):
+        login_guard.record_failure(ip)
         raise HTTPException(status_code=401, detail="Falsches Passwort")
+    login_guard.clear(ip)
     return _login_response(RedirectResponse(url="/", status_code=303))
 
 
