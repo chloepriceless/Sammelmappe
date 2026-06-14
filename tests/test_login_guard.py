@@ -28,33 +28,51 @@ def test_no_failures_is_not_blocked():
 
 def test_below_threshold_is_not_blocked():
     for i in range(M - 1):
-        login_guard.record_failure("1.2.3.4", now=T0 + i)
+        login_guard.register_attempt("1.2.3.4", now=T0 + i)
     assert login_guard.seconds_until_unblock("1.2.3.4", now=T0 + M) == 0
 
 
 def test_reaching_threshold_blocks():
     for i in range(M):
-        login_guard.record_failure("1.2.3.4", now=T0 + i)
+        login_guard.register_attempt("1.2.3.4", now=T0 + i)
     assert login_guard.seconds_until_unblock("1.2.3.4", now=T0 + M) > 0
+
+
+def test_register_allows_exactly_max_fails_then_blocks():
+    # Atomic count: the first MAX_FAILS attempts are allowed (return 0), the next is
+    # blocked WITHOUT being counted — no overshoot, even back-to-back.
+    for _ in range(M):
+        assert login_guard.register_attempt("1.2.3.4", now=T0) == 0
+    assert login_guard.register_attempt("1.2.3.4", now=T0) > 0
 
 
 def test_block_lifts_after_window():
     for i in range(M):
-        login_guard.record_failure("1.2.3.4", now=T0 + i)
+        login_guard.register_attempt("1.2.3.4", now=T0 + i)
     assert login_guard.seconds_until_unblock("1.2.3.4", now=T0 + W + 1) == 0
 
 
 def test_success_clear_unblocks_immediately():
     for _ in range(M):
-        login_guard.record_failure("1.2.3.4", now=T0)
+        login_guard.register_attempt("1.2.3.4", now=T0)
     assert login_guard.seconds_until_unblock("1.2.3.4", now=T0) > 0
     login_guard.clear("1.2.3.4")
     assert login_guard.seconds_until_unblock("1.2.3.4", now=T0) == 0
 
 
+def test_blocked_attempts_do_not_extend_the_lockout():
+    for _ in range(M):
+        login_guard.register_attempt("1.2.3.4", now=T0)
+    # Keep hammering while blocked — these must not be counted/extend the window.
+    for _ in range(50):
+        assert login_guard.register_attempt("1.2.3.4", now=T0 + 1) > 0
+    # The block still lifts one window after the original MAX_FAILS-th attempt.
+    assert login_guard.seconds_until_unblock("1.2.3.4", now=T0 + W + 1) == 0
+
+
 def test_lockout_is_per_ip():
     for _ in range(M):
-        login_guard.record_failure("1.1.1.1", now=T0)
+        login_guard.register_attempt("1.1.1.1", now=T0)
     assert login_guard.seconds_until_unblock("1.1.1.1", now=T0) > 0
     assert login_guard.seconds_until_unblock("2.2.2.2", now=T0) == 0
 
