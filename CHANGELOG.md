@@ -4,6 +4,33 @@ Alle nennenswerten Änderungen an diesem Projekt werden hier dokumentiert.
 Format orientiert sich an [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+Behebt die 4 Release-Blocker aus dem Qualitäts-Review vom 2026-06-14
+(`.planning/RELEASE-REVIEW-2026-06-14-FINDINGS.md`). Branch `fix/release-blockers`.
+
+### Security
+- **Fail-Fast-Guard gegen Default-`SECRET_KEY`.** Die App startet nicht mehr mit
+  einem Platzhalter-Secret (`change-me` u.ä.) — sonst wären Session-Cookies
+  fälschbar. `docker-compose` verlangt `SECRET_KEY` zwingend; `.env.example` ist
+  leer mit Generier-Hinweis. **Beim Deploy einen echten `SECRET_KEY` setzen, sonst
+  bootet die App nicht.**
+- **Brute-Force-Rate-Limit auf `/api/auth/login`.** In-Memory-Sliding-Window pro
+  Client-IP (15-Min-Fenster, Sperre ab 10 Fehlversuchen → HTTP 429 + `Retry-After`).
+  Neue Option `TRUSTED_PROXIES`: hinter einem Reverse-Proxy dort die Proxy-IP
+  eintragen, damit das Limit auf die echte Client-IP greift (`X-Forwarded-For` wird
+  nur von vertrauenswürdigen Proxys akzeptiert — nicht fälschbar).
+
+### Performance
+- **Upload blockiert den Event-Loop nicht mehr.** Datei-Write, Hashing und die
+  OCR-/Thumbnail-Pipeline (Tesseract/Claude/poppler) laufen jetzt im Threadpool
+  statt synchron im `async`-Endpoint.
+
+### Tests
+- **+36 Tests** (SECRET_KEY-Guard, Login-Rate-Limit inkl. End-to-End-429,
+  Upload-Pfad 415/413/400/409/Happy-Path). `requirements-dev.txt` + README-Abschnitt
+  „Tests". Flaky Tamper-Token-Test aus v1.6.1 deterministisch gemacht. ~191 grün.
+
 ## [1.6.1] — 2026-06-13
 
 ### Fixed

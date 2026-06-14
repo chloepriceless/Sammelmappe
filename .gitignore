@@ -17,3 +17,7 @@ venv/
 .planning/inbox/
 .planning/archive/
 .planning/handover/
+# Security review findings + working fix-designs: enumerate (partly unfixed)
+# vulnerabilities — keep out of the public repo.
+.planning/RELEASE-REVIEW-*.md
+.planning/*-fix-design.md

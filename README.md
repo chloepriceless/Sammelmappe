@@ -242,8 +242,10 @@ einer fremden Cloud.
 | `HOST`                     | `0.0.0.0`                        | Bind-Address                                                             |
 | `PORT`                     | `8080`                           |                                                                          |
 | `DATA_DIR`                 | `./data`                         | Hier liegen `app.db`, `invoices/`, `thumbnails/`, `exports/`             |
-| `SECRET_KEY`               | _zufällig vom Installer_         | Signiert Session-Cookies. Niemals committen.                             |
+| `SECRET_KEY`               | _(keiner — Pflicht)_             | Signiert Session-Cookies. **Erforderlich** — die App startet ohne einen sicheren Wert nicht. Generieren: `python -c "import secrets; print(secrets.token_urlsafe(32))"`. Niemals committen. |
 | `SESSION_HOURS`            | `720`                            | Cookie-Lebensdauer (30 Tage)                                             |
+| `TRUSTED_PROXIES`          | _(leer)_                         | Komma-getrennte Proxy-IPs, deren `X-Forwarded-For` vertraut wird. Setze hier die IP deines Reverse-Proxys, damit das Login-Rate-Limit auf die echte Client-IP greift (sonst zählt die Proxy-IP = ein globaler Topf). |
+| `TESSERACT_CMD`            | `tesseract`                      | Pfad/Name des Tesseract-Binaries                                         |
 | `TESSERACT_LANG`           | `deu+eng`                        | Tesseract-Sprachen                                                       |
 | `ANTHROPIC_API_KEY`        | _(leer)_                         | Wenn gesetzt: Vision-Fallback aktiv                                      |
 | `CLAUDE_MODEL`             | `claude-haiku-4-5-20251001`      | Welches Modell für die Vision-Anfragen                                   |
@@ -263,6 +265,19 @@ belege.deine-domain.de {
 ```
 
 In der `.env` dann nichts ändern; FastAPI ist mit `--proxy-headers` gestartet, akzeptiert also `X-Forwarded-*`.
+
+**Login-Rate-Limit hinter dem Proxy:** Setze `TRUSTED_PROXIES` auf die IP deines Proxys (z.B. `TRUSTED_PROXIES=10.0.0.1`). Sonst sieht die App nur die Proxy-IP, und das Brute-Force-Limit auf `/api/auth/login` würde alle Clients in einen Topf werfen. `X-Forwarded-For` wird bewusst nur von dort eingetragenen IPs vertraut (sonst wäre es fälschbar).
+
+---
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt   # pytest (httpx ist bereits Runtime-Dep)
+pytest                                # ~190 Tests, sollten alle grün sein
+```
+
+Die Tests brauchen weder Tesseract/poppler/zbar noch einen echten `SECRET_KEY` — `conftest.py` setzt einen Test-`SECRET_KEY` und ein Wegwerf-`DATA_DIR`, OCR wird in den Upload-Tests gemockt.
 
 ---
 
