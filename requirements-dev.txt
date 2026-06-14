@@ -1,0 +1,4 @@
+# Dev/test dependencies — install with: pip install -r requirements-dev.txt
+# (httpx is already a runtime dep and powers the FastAPI TestClient.)
+-r requirements.txt
+pytest==9.0.3
