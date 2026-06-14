@@ -141,8 +141,11 @@ def test_validate_rejects_garbage_token():
 
 def test_validate_rejects_tampered_token():
     token, _ = auth_mod.issue_session()
-    # Flip the last character to break the signature.
-    tampered = token[:-1] + ("A" if token[-1] != "A" else "B")
+    # Corrupt the FIRST char (start of the payload segment, always significant).
+    # NB: flipping the *last* char is unreliable — the trailing base64 char of the
+    # HMAC signature carries 'don't care' bits, so several chars decode to the same
+    # signature bytes and the token can stay valid.
+    tampered = ("A" if token[0] != "A" else "B") + token[1:]
     assert auth_mod._validate_token(tampered) is False
 
 
