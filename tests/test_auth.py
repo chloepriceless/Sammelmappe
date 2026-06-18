@@ -75,17 +75,17 @@ def test_not_initialized_on_fresh_db(auth_db):
 
 
 def test_set_password_marks_initialized(auth_db):
-    auth_mod.set_password("hunter2")
+    auth_mod.set_password("hunter2-strong")
     assert auth_mod.is_initialized() is True
 
 
 def test_verify_correct_password(auth_db):
-    auth_mod.set_password("hunter2")
-    assert auth_mod.verify_password("hunter2") is True
+    auth_mod.set_password("hunter2-strong")
+    assert auth_mod.verify_password("hunter2-strong") is True
 
 
 def test_verify_rejects_wrong_password(auth_db):
-    auth_mod.set_password("hunter2")
+    auth_mod.set_password("hunter2-strong")
     assert auth_mod.verify_password("wrong-one") is False
 
 
@@ -95,7 +95,7 @@ def test_verify_returns_false_when_no_password_set(auth_db):
 
 
 def test_password_stored_as_argon2_hash_not_clear(auth_db):
-    auth_mod.set_password("hunter2")
+    auth_mod.set_password("hunter2-strong")
     s = auth_db()
     try:
         row = s.get(Setting, auth_mod.PASSWORD_KEY)
@@ -103,19 +103,21 @@ def test_password_stored_as_argon2_hash_not_clear(auth_db):
         s.close()
     assert row is not None
     assert row.value.startswith("$argon2")
-    assert "hunter2" not in row.value
+    assert "hunter2-strong" not in row.value
 
 
 def test_set_password_too_short_raises(auth_db):
     with pytest.raises(ValueError):
-        auth_mod.set_password("12345")  # < 6 chars
+        auth_mod.set_password("a" * (auth_mod.MIN_PASSWORD_LENGTH - 1))  # one below the floor
     # And nothing was persisted.
     assert auth_mod.is_initialized() is False
 
 
-def test_set_password_minimum_length_ok(auth_db):
-    auth_mod.set_password("123456")  # exactly 6 chars is allowed
-    assert auth_mod.verify_password("123456") is True
+def test_set_password_at_minimum_length_ok(auth_db):
+    pw = "a" * auth_mod.MIN_PASSWORD_LENGTH  # exactly at the floor is allowed
+    auth_mod.set_password(pw)
+    assert auth_mod.is_initialized() is True
+    assert auth_mod.verify_password(pw) is True
 
 
 def test_set_password_overwrites_existing(auth_db):

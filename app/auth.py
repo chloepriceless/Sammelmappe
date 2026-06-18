@@ -13,6 +13,11 @@ from .models import Setting
 SESSION_COOKIE = "brs_session"
 PASSWORD_KEY = "auth.password_hash"
 
+# Minimum length for the single shared app password. The login endpoint is
+# rate-limited (login_guard) and the hash is Argon2, but a very short password is
+# still weak — raise the floor to a sensible length (was 6).
+MIN_PASSWORD_LENGTH = 10
+
 _hasher = PasswordHasher()
 _serializer = URLSafeTimedSerializer(settings.secret_key, salt="brs.session")
 
@@ -24,8 +29,8 @@ def is_initialized() -> bool:
 
 
 def set_password(plain: str) -> None:
-    if len(plain) < 6:
-        raise ValueError("Passwort muss mindestens 6 Zeichen lang sein.")
+    if len(plain) < MIN_PASSWORD_LENGTH:
+        raise ValueError(f"Passwort muss mindestens {MIN_PASSWORD_LENGTH} Zeichen lang sein.")
     pw_hash = _hasher.hash(plain)
     with session_scope() as db:
         row = db.get(Setting, PASSWORD_KEY)
