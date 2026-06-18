@@ -18,6 +18,8 @@ from app.db import Base, get_db
 from app.main import app
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64  # plausible PNG-ish bytes; OCR is mocked anyway
+JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF" + b"\x00" * 64
+XRECHNUNG = b'<?xml version="1.0" encoding="UTF-8"?><Invoice><ID>R-1</ID></Invoice>'
 
 
 @pytest.fixture
@@ -103,3 +105,31 @@ def test_upload_persists_invoice_and_writes_file(client):
     listing = client.get("/api/invoices")
     assert listing.status_code == 200
     assert any(i["id"] == r.json()["id"] for i in listing.json()["items"])
+
+
+# --- M2: content-based MIME validation ---
+
+def test_upload_rejects_markup_disguised_as_image(client):
+    """HTML/SVG declared as image/png is the stored-XSS vector — must be 415."""
+    evil = b"<!DOCTYPE html><script>alert(document.cookie)</script>"
+    r = client.post("/api/invoices", files={"file": ("evil.png", evil, "image/png")})
+    assert r.status_code == 415
+
+
+def test_upload_rejects_unrecognised_binary(client):
+    """Declared image/png but bytes match no known signature -> reject (no weak fallback)."""
+    r = client.post("/api/invoices", files={"file": ("x.png", b"\x00\x01\x02\x03nope", "image/png")})
+    assert r.status_code == 415
+
+
+def test_upload_accepts_xrechnung_and_canonicalises_mime(client):
+    r = client.post("/api/invoices", files={"file": ("re.xml", XRECHNUNG, "text/xml")})
+    assert r.status_code == 200
+    assert r.json()["mime"] == "application/xml"  # canonical, not the declared text/xml
+
+
+def test_upload_stores_detected_mime_not_declared(client):
+    """Declared the non-standard image/jpg; real JPEG bytes -> stored as image/jpeg."""
+    r = client.post("/api/invoices", files={"file": ("foto.jpg", JPEG, "image/jpg")})
+    assert r.status_code == 200
+    assert r.json()["mime"] == "image/jpeg"

@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from .. import einvoice, ocr
+from .. import einvoice, filetype, ocr
 from ..auth import require_auth
 from ..config import settings
 from ..db import get_db
@@ -27,6 +27,8 @@ ALLOWED_MIME = {
     "application/pdf",
     "application/xml", "text/xml",   # standalone XRechnung uploads
 }
+
+_XML_MIMES = {"application/xml", "text/xml"}
 
 
 def _document_type(engine: str | None) -> str:
@@ -79,6 +81,17 @@ async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get
     if len(raw) == 0:
         raise HTTPException(status_code=400, detail="Leere Datei")
 
+    # Content-based validation: never trust the client Content-Type alone. Sniff
+    # the real type from the bytes, reject markup disguised as an image (stored-XSS
+    # vector) and unrecognised content, and store the *detected* canonical MIME so
+    # the serve path (get_invoice_file) can't be tricked by a forged declaration.
+    detected = filetype.sniff(raw)
+    if detected is None:
+        raise HTTPException(status_code=415, detail="Dateiinhalt nicht erkannt oder nicht unterstützt")
+    if detected == filetype.XML and file.content_type not in _XML_MIMES:
+        raise HTTPException(status_code=415, detail="Dateiinhalt (Text/Markup) passt nicht zum angegebenen Dateityp")
+    content_mime = detected
+
     suffix = Path(file.filename or "upload").suffix.lower() or ".bin"
     stored_name = f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(4)}{suffix}"
     dest = settings.invoices_dir / stored_name
@@ -103,7 +116,7 @@ async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get
 
     # OCR
     try:
-        result = await run_in_threadpool(ocr.extract, dest, file.content_type)
+        result = await run_in_threadpool(ocr.extract, dest, content_mime)
     except Exception:
         log.exception("OCR failed")
         result = ocr.ExtractedInvoice(engine="failed")
@@ -118,7 +131,7 @@ async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get
     inv = Invoice(
         filename=stored_name,
         original_name=file.filename or stored_name,
-        mime=file.content_type,
+        mime=content_mime,
         size_bytes=len(raw),
         sha256=file_hash,
         vendor=result.vendor,
