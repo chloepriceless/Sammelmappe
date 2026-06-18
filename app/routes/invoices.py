@@ -273,11 +273,19 @@ def update_invoice(
             touched = True
 
     if "amount" in payload:
-        try:
-            inv.amount = float(payload["amount"]) if payload["amount"] not in (None, "") else None
-            touched = True
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail="amount muss eine Zahl sein")
+        if payload["amount"] in (None, ""):
+            inv.amount = None
+        else:
+            try:
+                amt = float(payload["amount"])
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail="amount muss eine Zahl sein")
+            # Reject NaN/Inf/negative — they would poison the § 35a comparison below
+            # and persist garbage (same hardening the labor_amount block already has).
+            if not math.isfinite(amt) or amt < 0:
+                raise HTTPException(status_code=400, detail="amount muss eine endliche, nicht-negative Zahl sein")
+            inv.amount = amt
+        touched = True
 
     if "invoice_date" in payload:
         v = payload["invoice_date"]
@@ -337,6 +345,25 @@ def update_invoice(
         if payload["status"] == "open":
             inv.submission_id = None
         touched = True
+
+    # § 35a consistency: if this request changed `amount` but did NOT carry
+    # `labor_amount` (so the labor block above didn't re-check), a previously stored
+    # labor_amount could now exceed the new, smaller amount → a silently wrong
+    # Handwerkerbonus estimate. Reject explicitly instead of capping silently.
+    if (
+        "amount" in payload
+        and "labor_amount" not in payload
+        and inv.labor_amount is not None
+        and inv.amount is not None
+        and inv.labor_amount > inv.amount
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Arbeitskosten-Anteil ({inv.labor_amount:.2f} €) übersteigt den neuen "
+                f"Betrag ({inv.amount:.2f} €). Bitte die Arbeitskosten anpassen."
+            ),
+        )
 
     if touched:
         inv.manually_edited = True

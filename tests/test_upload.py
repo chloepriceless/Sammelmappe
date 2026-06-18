@@ -187,3 +187,50 @@ def test_upload_507_on_disk_write_error_leaves_no_orphan(client, monkeypatch):
     assert r.status_code == 507
     # the failed write must not leave a partial file behind
     assert list((settings.data_dir / "invoices").glob("*")) == []
+
+
+# --- M6: § 35a labor/amount consistency on PATCH ---
+
+def _upload(client):
+    return client.post("/api/invoices", files={"file": ("b.png", PNG, "image/png")}).json()["id"]
+
+
+def test_patch_lowering_amount_below_stored_labor_is_rejected(client):
+    iid = _upload(client)  # mock OCR sets amount=42
+    assert client.patch(f"/api/invoices/{iid}", json={"labor_amount": 40}).status_code == 200
+    # lower amount to 30 WITHOUT labor in payload -> stored labor 40 > 30 -> 400 (M6)
+    r = client.patch(f"/api/invoices/{iid}", json={"amount": 30})
+    assert r.status_code == 400
+    assert "Arbeitskosten" in r.json()["detail"]
+
+
+def test_patch_lowering_amount_above_labor_ok(client):
+    iid = _upload(client)
+    client.patch(f"/api/invoices/{iid}", json={"labor_amount": 40})
+    assert client.patch(f"/api/invoices/{iid}", json={"amount": 50}).status_code == 200
+
+
+def test_patch_clearing_amount_with_stored_labor_ok(client):
+    iid = _upload(client)
+    client.patch(f"/api/invoices/{iid}", json={"labor_amount": 40})
+    # amount -> None: no comparison should run (no crash)
+    assert client.patch(f"/api/invoices/{iid}", json={"amount": ""}).status_code == 200
+
+
+def test_patch_amount_and_labor_together_uses_labor_check(client):
+    iid = _upload(client)
+    # both in payload, labor > new amount -> existing labor-block check fires
+    r = client.patch(f"/api/invoices/{iid}", json={"amount": 30, "labor_amount": 35})
+    assert r.status_code == 400
+
+
+def test_patch_amount_nan_rejected(client):
+    iid = _upload(client)
+    r = client.patch(f"/api/invoices/{iid}", json={"amount": "nan"})
+    assert r.status_code == 400
+
+
+def test_patch_amount_negative_rejected(client):
+    iid = _upload(client)
+    r = client.patch(f"/api/invoices/{iid}", json={"amount": -5})
+    assert r.status_code == 400
