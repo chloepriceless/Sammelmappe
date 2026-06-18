@@ -6,10 +6,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
-Behebt die 4 Release-Blocker aus dem Qualitäts-Review vom 2026-06-14
-(`.planning/RELEASE-REVIEW-2026-06-14-FINDINGS.md`). Branch `fix/release-blockers`.
+Zwei Stufen aus dem Qualitäts-Review vom 2026-06-14
+(`.planning/RELEASE-REVIEW-2026-06-14-FINDINGS.md`): die 4 Release-Blocker (Branch
+`fix/release-blockers`) und die MEDIUM/LOW-Folge-Härtung (Branch
+`harden/medium-findings`). **200 → 230 Tests grün.**
 
-### Security
+### Behoben — Release-Blocker (`fix/release-blockers`)
+
+#### Security
 - **Fail-Fast-Guard gegen unsicheren `SECRET_KEY`.** Die App startet nicht mehr mit
   einem Platzhalter-Secret (`change-me` u.ä.) **oder einem zu kurzen, schwachen
   Schlüssel** (Mindestlänge 32 Zeichen — `secrets.token_urlsafe(32)` liefert 43).
@@ -24,16 +28,47 @@ Behebt die 4 Release-Blocker aus dem Qualitäts-Review vom 2026-06-14
   eintragen, damit das Limit auf die echte Client-IP greift (`X-Forwarded-For` wird
   nur von vertrauenswürdigen Proxys akzeptiert — nicht fälschbar).
 
-### Performance
+#### Performance
 - **Upload blockiert den Event-Loop nicht mehr.** Datei-Write, Hashing und die
   OCR-/Thumbnail-Pipeline (Tesseract/Claude/poppler) laufen jetzt im Threadpool
   statt synchron im `async`-Endpoint.
 
+### Härtung — MEDIUM/LOW-Folge-Findings (`harden/medium-findings`)
+
+#### Security
+- **Session-Cookie standardmäßig `Secure`.** Das `Secure`-Flag war hart auf `False`
+  — hinter dem dokumentierten Reverse-Proxy konnte das Cookie über Klartext-HTTP
+  abgegriffen werden. Jetzt `COOKIE_SECURE` (Default `true`, secure-by-default);
+  `false` nur für reinen HTTP-LAN-Betrieb.
+- **Upload-Magic-Byte-Validierung.** Der Upload prüfte nur den Client-`Content-Type`
+  — als `image/*` getarnte HTML/SVG/XML passierte. Neues `app/filetype.py` (stdlib)
+  snifft den echten Typ; als Bild getarntes Markup und unerkannte Inhalte werden mit
+  `415` abgelehnt, der gespeicherte MIME ist der erkannte kanonische Typ.
+- **Datei-Serve gehärtet.** `X-Content-Type-Options: nosniff` auf allen File-Serves;
+  XML/Markup wird nie inline ausgeliefert (forciert `attachment`); Dateiname über
+  RFC-5987 statt manuellem Header-Bau (kein CR/LF-/Quote-Injection).
+
+#### Behoben
+- **§ 35a: Arbeitskosten-Konsistenz bei `amount`-Änderung.** Eine PATCH-Änderung nur
+  des Betrags (kleiner) ließ einen gespeicherten höheren `labor_amount` stehen →
+  still falsche Handwerkerbonus-Schätzung. Jetzt explizite Revalidierung (HTTP 400).
+  `amount` zusätzlich gegen NaN/Inf/negativ gehärtet.
+- **Upload-Disk-Write abgesichert.** Volle/nicht-beschreibbare Platte gibt jetzt
+  `507` statt `500` und hinterlässt keine verwaiste Teildatei (auch der DB-Commit-Pfad
+  räumt bei Fehler auf).
+- **Thumbnail liefert `404` statt `500`,** wenn das Rendern fehlschlägt und keine Datei
+  schreibt.
+
+### Dokumentation
+- CHANGELOG-Linkrefs für `v1.6.1`/`v1.6.0` ergänzt; README um `COOKIE_SECURE`,
+  `TESSERACT_CMD` und den `X-Forwarded-For`-Deploy-Caveat erweitert.
+
 ### Tests
-- **+43 Tests** (SECRET_KEY-Guard inkl. Low-Entropy-/Mindestlängen-Reject,
-  Login-Rate-Limit inkl. End-to-End-429, Upload-Pfad 415/413/400/409/Happy-Path).
-  `requirements-dev.txt` + README-Abschnitt „Tests". Flaky Tamper-Token-Test aus
-  v1.6.1 deterministisch gemacht. **200 grün.**
+- **+63 Tests** gesamt (167 → 230): SECRET_KEY-Guard inkl. Low-Entropy-Reject,
+  Login-Rate-Limit inkl. End-to-End-429, Upload-Pfad (415/413/400/409/507/Happy),
+  Magic-Byte-Sniffing, Serve-Header (nosniff/disposition), § 35a-PATCH-Konsistenz,
+  Cookie-Secure. `requirements-dev.txt` + README-Abschnitt „Tests". Flaky
+  Tamper-Token-Test aus v1.6.1 deterministisch gemacht.
 
 ## [1.6.1] — 2026-06-13
 
