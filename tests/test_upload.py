@@ -172,3 +172,18 @@ def test_thumbnail_returns_404_not_500_when_render_yields_nothing(client):
     iid = client.post("/api/invoices", files={"file": ("b.png", PNG, "image/png")}).json()["id"]
     r = client.get(f"/api/invoices/{iid}/thumbnail")
     assert r.status_code == 404
+
+
+# --- M4: guarded disk write ---
+
+def test_upload_507_on_disk_write_error_leaves_no_orphan(client, monkeypatch):
+    from pathlib import Path
+
+    def boom(self, data):
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(Path, "write_bytes", boom)
+    r = client.post("/api/invoices", files={"file": ("b.png", PNG, "image/png")})
+    assert r.status_code == 507
+    # the failed write must not leave a partial file behind
+    assert list((settings.data_dir / "invoices").glob("*")) == []

@@ -96,8 +96,18 @@ async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get
     stored_name = f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{secrets.token_hex(4)}{suffix}"
     dest = settings.invoices_dir / stored_name
     # Disk write + hashing + OCR are blocking; off-load to a thread so the async
-    # event loop stays free to serve other requests during a slow upload.
-    await run_in_threadpool(dest.write_bytes, raw)
+    # event loop stays free to serve other requests during a slow upload. Guard the
+    # write: a full or unwritable disk must yield a clean 507 and leave no orphaned
+    # (partial) file behind, not a bare 500.
+    try:
+        await run_in_threadpool(dest.write_bytes, raw)
+    except OSError:
+        log.exception("upload: writing %s failed", dest)
+        dest.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=507,
+            detail="Datei konnte nicht gespeichert werden (Speicher voll oder Pfad nicht beschreibbar)",
+        )
 
     file_hash = await run_in_threadpool(sha256_file, dest)
 
@@ -145,7 +155,16 @@ async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get
         status="open",
     )
     db.add(inv)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        # A failed commit would otherwise leave the written file + thumbnail
+        # orphaned on disk with no DB row pointing at them.
+        db.rollback()
+        log.exception("upload: DB commit failed for %s", stored_name)
+        dest.unlink(missing_ok=True)
+        thumb_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail="Speichern in der Datenbank fehlgeschlagen")
     db.refresh(inv)
     return _invoice_to_dict(inv)
 
