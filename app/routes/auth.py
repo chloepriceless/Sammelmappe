@@ -60,7 +60,7 @@ def _login_response(resp: Response) -> Response:
         max_age=settings.session_hours * 3600,
         httponly=True,
         samesite="lax",
-        secure=False,  # set True behind HTTPS reverse proxy
+        secure=settings.cookie_secure,  # True by default; COOKIE_SECURE=false for plain-HTTP LAN
         path="/",
     )
     return resp

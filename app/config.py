@@ -10,6 +10,12 @@ class Settings(BaseSettings):
     secret_key: str = "change-me"
     session_hours: int = 720
 
+    # Session-cookie ``Secure`` flag. True (default) = the cookie is only sent over
+    # HTTPS — correct behind the documented TLS-terminating reverse proxy. Set
+    # COOKIE_SECURE=false ONLY for plain-HTTP LAN use, otherwise the browser won't
+    # send the cookie back over http:// and login silently fails.
+    cookie_secure: bool = True
+
     # Comma-separated proxy IPs whose X-Forwarded-For header may be trusted to
     # carry the real client IP. Empty (default) = trust nobody → use the direct
     # transport peer. Set this to your reverse-proxy's IP so the login rate-limit

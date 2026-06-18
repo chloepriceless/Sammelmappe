@@ -244,6 +244,7 @@ einer fremden Cloud.
 | `DATA_DIR`                 | `./data`                         | Hier liegen `app.db`, `invoices/`, `thumbnails/`, `exports/`             |
 | `SECRET_KEY`               | _(keiner — Pflicht)_             | Signiert Session-Cookies. **Erforderlich** — die App startet ohne einen sicheren Wert nicht. Generieren: `python -c "import secrets; print(secrets.token_urlsafe(32))"`. Niemals committen. |
 | `SESSION_HOURS`            | `720`                            | Cookie-Lebensdauer (30 Tage)                                             |
+| `COOKIE_SECURE`            | `true`                           | `Secure`-Flag des Session-Cookies. `true` = Cookie nur über HTTPS (korrekt hinter dem dokumentierten TLS-Reverse-Proxy). Auf `false` setzen **nur** bei reinem HTTP-Betrieb im LAN — sonst sendet der Browser das Cookie nicht und der Login schlägt stillschweigend fehl. |
 | `TRUSTED_PROXIES`          | _(leer)_                         | Komma-getrennte Proxy-IPs, deren `X-Forwarded-For` vertraut wird. Setze hier die IP deines Reverse-Proxys, damit das Login-Rate-Limit auf die echte Client-IP greift (sonst zählt die Proxy-IP = ein globaler Topf). |
 | `TESSERACT_CMD`            | `tesseract`                      | Pfad/Name des Tesseract-Binaries                                         |
 | `TESSERACT_LANG`           | `deu+eng`                        | Tesseract-Sprachen                                                       |
