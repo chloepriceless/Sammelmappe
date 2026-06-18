@@ -268,6 +268,8 @@ In der `.env` dann nichts ändern; FastAPI ist mit `--proxy-headers` gestartet, 
 
 **Login-Rate-Limit hinter dem Proxy:** Setze `TRUSTED_PROXIES` auf die IP deines Proxys (z.B. `TRUSTED_PROXIES=10.0.0.1`). Sonst sieht die App nur die Proxy-IP, und das Brute-Force-Limit auf `/api/auth/login` würde alle Clients in einen Topf werfen. `X-Forwarded-For` wird bewusst nur von dort eingetragenen IPs vertraut (sonst wäre es fälschbar).
 
+> **Deploy-Caveat:** Der Proxy muss `X-Forwarded-For` selbst setzen bzw. ein vom Client mitgeschicktes Feld überschreiben/anhängen. Reicht er ein vom Client kontrolliertes `X-Forwarded-For` ungeprüft durch, könnte ein Angreifer pro Versuch eine andere gefälschte Client-IP vortäuschen und das Rate-Limit umgehen. Caddy (`reverse_proxy`) und nginx mit der dokumentierten Standardkonfiguration tun das korrekt.
+
 ---
 
 ## Tests
