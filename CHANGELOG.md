@@ -9,7 +9,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 Zwei Stufen aus dem Qualitäts-Review vom 2026-06-14
 (`.planning/RELEASE-REVIEW-2026-06-14-FINDINGS.md`): die 4 Release-Blocker (Branch
 `fix/release-blockers`) und die MEDIUM/LOW-Folge-Härtung (Branch
-`harden/medium-findings`). **200 → 230 Tests grün.**
+`harden/medium-findings`). **200 → 232 Tests grün.**
 
 ### Behoben — Release-Blocker (`fix/release-blockers`)
 
@@ -47,6 +47,9 @@ Zwei Stufen aus dem Qualitäts-Review vom 2026-06-14
 - **Datei-Serve gehärtet.** `X-Content-Type-Options: nosniff` auf allen File-Serves;
   XML/Markup wird nie inline ausgeliefert (forciert `attachment`); Dateiname über
   RFC-5987 statt manuellem Header-Bau (kein CR/LF-/Quote-Injection).
+- **Mindest-Passwortlänge auf 10 angehoben** (`set_password` + Setup-UI; analog zum
+  `SECRET_KEY`-Guard). Login bleibt bei 6, damit Bestands-Passwörter sich weiter
+  anmelden können — die Grenze gilt nur für neu gesetzte Passwörter.
 
 #### Behoben
 - **§ 35a: Arbeitskosten-Konsistenz bei `amount`-Änderung.** Eine PATCH-Änderung nur
@@ -58,13 +61,16 @@ Zwei Stufen aus dem Qualitäts-Review vom 2026-06-14
   räumt bei Fehler auf).
 - **Thumbnail liefert `404` statt `500`,** wenn das Rendern fehlschlägt und keine Datei
   schreibt.
+- **Upload-`Content-Type` toleranter.** Ein gültiges `application/xml; charset=utf-8`
+  oder `IMAGE/PNG` wurde vom exakten Vergleich fälschlich abgelehnt; jetzt wird der
+  MIME-Teil normalisiert (der Magic-Byte-Sniff bleibt die eigentliche Validierung).
 
 ### Dokumentation
 - CHANGELOG-Linkrefs für `v1.6.1`/`v1.6.0` ergänzt; README um `COOKIE_SECURE`,
   `TESSERACT_CMD` und den `X-Forwarded-For`-Deploy-Caveat erweitert.
 
 ### Tests
-- **+63 Tests** gesamt (167 → 230): SECRET_KEY-Guard inkl. Low-Entropy-Reject,
+- **+63 Tests** gesamt (167 → 232): SECRET_KEY-Guard inkl. Low-Entropy-Reject,
   Login-Rate-Limit inkl. End-to-End-429, Upload-Pfad (415/413/400/409/507/Happy),
   Magic-Byte-Sniffing, Serve-Header (nosniff/disposition), § 35a-PATCH-Konsistenz,
   Cookie-Secure. `requirements-dev.txt` + README-Abschnitt „Tests". Flaky
