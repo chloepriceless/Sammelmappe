@@ -234,3 +234,16 @@ def test_patch_amount_negative_rejected(client):
     iid = _upload(client)
     r = client.patch(f"/api/invoices/{iid}", json={"amount": -5})
     assert r.status_code == 400
+
+
+# --- Content-Type normalisation (charset suffix / odd casing must not be rejected) ---
+
+def test_upload_accepts_content_type_with_charset(client):
+    r = client.post("/api/invoices", files={"file": ("re.xml", XRECHNUNG, "application/xml; charset=utf-8")})
+    assert r.status_code == 200
+    assert r.json()["mime"] == "application/xml"
+
+
+def test_upload_accepts_odd_cased_content_type(client):
+    r = client.post("/api/invoices", files={"file": ("b.png", PNG, "IMAGE/PNG")})
+    assert r.status_code == 200

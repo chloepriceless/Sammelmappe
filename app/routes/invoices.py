@@ -72,7 +72,12 @@ def _invoice_to_dict(inv: Invoice) -> dict:
 
 @router.post("")
 async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    if file.content_type not in ALLOWED_MIME:
+    # Normalise the declared type: strip a charset/parameter suffix and lower-case,
+    # so a perfectly valid 'application/xml; charset=utf-8' or 'IMAGE/PNG' isn't
+    # rejected by an over-strict exact match. (The magic-byte sniff below is the
+    # real validation; this is only the fast pre-gate.)
+    declared_mime = (file.content_type or "").split(";", 1)[0].strip().lower()
+    if declared_mime not in ALLOWED_MIME:
         raise HTTPException(status_code=415, detail=f"Dateityp nicht unterstützt: {file.content_type}")
 
     raw = await file.read()
@@ -88,7 +93,7 @@ async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get
     detected = filetype.sniff(raw)
     if detected is None:
         raise HTTPException(status_code=415, detail="Dateiinhalt nicht erkannt oder nicht unterstützt")
-    if detected == filetype.XML and file.content_type not in _XML_MIMES:
+    if detected == filetype.XML and declared_mime not in _XML_MIMES:
         raise HTTPException(status_code=415, detail="Dateiinhalt (Text/Markup) passt nicht zum angegebenen Dateityp")
     content_mime = detected
 
