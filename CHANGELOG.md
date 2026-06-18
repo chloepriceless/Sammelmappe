@@ -192,6 +192,8 @@ Behebt die 4 Release-Blocker aus dem Qualitäts-Review vom 2026-06-14
   Status-Tracking, Einreichungs-Historie, Duplikat-Erkennung, Kategorien,
   Auth (Argon2), Proxmox-/Docker-Setup.
 
+[1.6.1]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.6.1
+[1.6.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.6.0
 [1.5.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.5.0
 [1.4.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.4.0
 [1.3.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.3.0
