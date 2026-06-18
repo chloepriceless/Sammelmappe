@@ -358,14 +358,23 @@ def get_invoice_file(
     path = settings.invoices_dir / inv.filename
     if not path.exists():
         raise HTTPException(status_code=404, detail="Datei fehlt auf dem Server")
-    if download:
-        return FileResponse(path, media_type=inv.mime, filename=inv.original_name)
-    # Inline display — no filename= so FastAPI doesn't add attachment disposition.
-    safe_name = inv.original_name.replace('"', '')
+    # XML/markup is NEVER served inline — a browser could interpret it as active
+    # markup in the app origin (stored-XSS). Force it to download. ``nosniff`` on
+    # every path stops the browser from MIME-sniffing a forged type. Starlette's
+    # ``filename`` builds an RFC-5987 Content-Disposition (CR/LF/quote-safe), so no
+    # manual header construction / injection risk.
+    # NOTE: PDFs stay inline for the core "view the receipt" UX. The browser PDF
+    # viewer is same-origin; the residual risk is accepted for this single-user,
+    # self-hosted app (session cookie is HttpOnly → not script-readable). A fully
+    # isolating fix (separate cookieless origin) is out of proportion here.
+    is_markup = inv.mime in _XML_MIMES
+    disposition = "attachment" if (download or is_markup) else "inline"
     return FileResponse(
         path,
         media_type=inv.mime,
-        headers={"Content-Disposition": f'inline; filename="{safe_name}"'},
+        filename=inv.original_name,
+        content_disposition_type=disposition,
+        headers={"X-Content-Type-Options": "nosniff"},
     )
 
 
@@ -381,7 +390,12 @@ def get_invoice_thumbnail(invoice_id: int, db: Session = Depends(get_db)):
             ocr.make_thumbnail(settings.invoices_dir / inv.filename, thumb)
         except Exception:
             raise HTTPException(status_code=404)
-    return FileResponse(thumb, media_type="image/jpeg")
+        # make_thumbnail can return *silently* without writing the file (e.g. a
+        # failed PDF render returns None) — guard against FileResponse on a missing
+        # path, which would surface as a 500 instead of a clean 404 (M5).
+        if not thumb.exists():
+            raise HTTPException(status_code=404)
+    return FileResponse(thumb, media_type="image/jpeg", headers={"X-Content-Type-Options": "nosniff"})
 
 
 @router.post("/{invoice_id}/reocr")

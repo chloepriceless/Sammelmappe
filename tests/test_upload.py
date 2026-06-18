@@ -133,3 +133,42 @@ def test_upload_stores_detected_mime_not_declared(client):
     r = client.post("/api/invoices", files={"file": ("foto.jpg", JPEG, "image/jpg")})
     assert r.status_code == 200
     assert r.json()["mime"] == "image/jpeg"
+
+
+# --- M3: serve-path hardening (nosniff / XML-as-attachment / safe filename) ---
+
+def test_serve_inline_image_has_nosniff(client):
+    iid = client.post("/api/invoices", files={"file": ("b.png", PNG, "image/png")}).json()["id"]
+    r = client.get(f"/api/invoices/{iid}/file")
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["content-disposition"].startswith("inline")
+
+
+def test_serve_xml_forced_to_attachment(client):
+    iid = client.post("/api/invoices", files={"file": ("re.xml", XRECHNUNG, "text/xml")}).json()["id"]
+    r = client.get(f"/api/invoices/{iid}/file")  # no ?download → still attachment
+    assert r.headers["content-disposition"].startswith("attachment")
+    assert r.headers["x-content-type-options"] == "nosniff"
+
+
+def test_serve_download_is_attachment_with_nosniff(client):
+    iid = client.post("/api/invoices", files={"file": ("b.png", PNG, "image/png")}).json()["id"]
+    r = client.get(f"/api/invoices/{iid}/file?download=true")
+    assert r.headers["content-disposition"].startswith("attachment")
+    assert r.headers["x-content-type-options"] == "nosniff"
+
+
+def test_serve_filename_with_quote_is_header_safe(client):
+    iid = client.post("/api/invoices", files={"file": ('a"b.png', PNG, "image/png")}).json()["id"]
+    r = client.get(f"/api/invoices/{iid}/file")
+    cd = r.headers["content-disposition"]
+    assert "\r" not in cd and "\n" not in cd  # no header injection
+    assert r.status_code == 200
+
+
+def test_thumbnail_returns_404_not_500_when_render_yields_nothing(client):
+    """M5: make_thumbnail is mocked to a no-op (mimics a failed PDF render that
+    writes nothing) → the serve path must 404, not 500 on a missing file."""
+    iid = client.post("/api/invoices", files={"file": ("b.png", PNG, "image/png")}).json()["id"]
+    r = client.get(f"/api/invoices/{iid}/thumbnail")
+    assert r.status_code == 404
