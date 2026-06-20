@@ -1,0 +1,55 @@
+name: CI
+
+# Läuft die Testsuite gegen ein produktionsnahes Umfeld (Python 3.12 + die
+# OCR-/PDF-/QR-Systembibliotheken aus dem Dockerfile). Die Tests sind hermetisch:
+# conftest.py setzt SECRET_KEY und DATA_DIR vor dem App-Import, es werden keine
+# echten Secrets (Anthropic-Key o.ä.) benötigt.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Bei schneller Folge von Pushes/Force-Pushes auf denselben Ref den vorherigen
+# Lauf abbrechen — spart Runner-Minuten.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: pytest (Python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      # Spiegelt die Systempakete des Dockerfile: tesseract (pytesseract),
+      # poppler-utils (pdf2image) und libzbar0 (pyzbar). pyzbar wird zwar
+      # defensiv importiert, aber CI soll dem Produktionsumfeld entsprechen.
+      - name: Install system dependencies (OCR/PDF/QR)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng \
+            poppler-utils libzbar0
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest -q
