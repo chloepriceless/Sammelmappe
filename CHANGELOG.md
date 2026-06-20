@@ -6,10 +6,10 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
-Zwei Stufen aus dem Qualitäts-Review vom 2026-06-14
-(`.planning/RELEASE-REVIEW-2026-06-14-FINDINGS.md`): die 4 Release-Blocker (Branch
-`fix/release-blockers`) und die MEDIUM/LOW-Folge-Härtung (Branch
-`harden/medium-findings`). **200 → 232 Tests grün.**
+Drei Stufen: die 4 Release-Blocker (Branch `fix/release-blockers`) und die
+MEDIUM/LOW-Folge-Härtung (Branch `harden/medium-findings`) aus dem Qualitäts-Review
+vom 2026-06-14 (`.planning/RELEASE-REVIEW-2026-06-14-FINDINGS.md`), plus die
+nachgelagerte Round-2-Härtung (Branch `harden/round-2`). **200 → 245 Tests grün.**
 
 ### Behoben — Release-Blocker (`fix/release-blockers`)
 
@@ -75,6 +75,34 @@ Zwei Stufen aus dem Qualitäts-Review vom 2026-06-14
   Magic-Byte-Sniffing, Serve-Header (nosniff/disposition), § 35a-PATCH-Konsistenz,
   Cookie-Secure. `requirements-dev.txt` + README-Abschnitt „Tests". Flaky
   Tamper-Token-Test aus v1.6.1 deterministisch gemacht.
+
+### Härtung — Round 2 (`harden/round-2`)
+
+#### Security / Datenintegrität
+- **`sha256` ist jetzt DB-seitig `UNIQUE` — schließt das Duplikat-Race.** Die
+  Dubletten-Erkennung beim Upload war rein anwendungsseitig (prüfen → einfügen); zwei
+  gleichzeitige Uploads derselben Datei konnten beide die Prüfung passieren und beide
+  gespeichert werden. Der UNIQUE-Constraint ist der Backstop: ein Commit-Konflikt
+  liefert jetzt dieselbe `409`-Duplikat-Antwort wie die Vorab-Prüfung (statt eines
+  `500`). SQLite-`busy_timeout` wird gepinnt (`timeout=30`), damit der Verlierer des
+  Schreib-Locks deterministisch im Constraint landet statt in „database is locked".
+- **Fail-safe, nicht-destruktive Migration für Bestands-DBs.** `create_all` lässt einen
+  vorhandenen, nur namensgleichen Index unangetastet, also wandelt eine eigene Migration
+  den alten Nicht-Unique-Index in einen Unique-Index gleichen Namens um — atomar über
+  eine explizite `BEGIN`-Transaktion auf der rohen DBAPI-Verbindung (ein fehlschlagendes
+  `CREATE` darf den Index nicht verlieren). Liegen Alt-Duplikate vor, wird der Constraint
+  **nicht** angelegt und **keine Zeile gelöscht**; stattdessen warnt der Start laut und
+  `/healthz` meldet den Zustand, bis der Betreiber manuell bereinigt.
+
+#### Build/CI
+- **GitHub-Actions-Pipeline** (`.github/workflows/ci.yml`): pytest auf Python 3.12 mit
+  den OCR-/PDF-/QR-Systempaketen aus dem Dockerfile; least-privilege, concurrency-cancel.
+
+### Tests
+- **+13 Tests** (232 → 245): sha256-Migration (Konvertierung, Idempotenz, Composite-Index,
+  Duplikat-Abbruch+Warnung, **Atomaritäts-Regression: alter Index überlebt fehlschlagendes
+  `CREATE`**), Upload-Race → `409` ohne Orphan, IntegrityError-ohne-Treffer → `500`,
+  `/healthz`-Warnsignal.
 
 ## [1.6.1] — 2026-06-13
 

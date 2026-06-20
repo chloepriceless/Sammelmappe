@@ -22,7 +22,7 @@ class Invoice(Base):
     original_name: Mapped[str] = mapped_column(String, nullable=False)
     mime: Mapped[str] = mapped_column(String, nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
-    sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
 
     # Recognised data
     vendor: Mapped[str | None] = mapped_column(String, nullable=True)     # supplier / merchant

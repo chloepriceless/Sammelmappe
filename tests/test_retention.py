@@ -64,6 +64,8 @@ def test_status_defaults_to_today():
 
 # --- /api/stats retention summary + invoice serialisation ------------------
 
+import itertools
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -71,6 +73,10 @@ from app.db import Base
 from app.models import Invoice
 from app.routes.stats import _retention_summary
 from app.routes.invoices import _invoice_to_dict
+
+# sha256 is UNIQUE on the model — every helper-built invoice needs a distinct hash,
+# otherwise add_all of several rows trips the unique index. A counter is enough.
+_sha_counter = itertools.count(1)
 
 
 def _make_session(tmp_path):
@@ -82,7 +88,7 @@ def _make_session(tmp_path):
 def _invoice(**kw) -> Invoice:
     defaults = dict(
         filename="f.jpg", original_name="f.jpg", mime="image/jpeg",
-        size_bytes=1, sha256="0" * 64,
+        size_bytes=1, sha256=f"{next(_sha_counter):064x}",
     )
     defaults.update(kw)
     return Invoice(**defaults)

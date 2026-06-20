@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import einvoice, filetype, ocr
@@ -162,6 +163,27 @@ async def upload_invoice(file: UploadFile = File(...), db: Session = Depends(get
     db.add(inv)
     try:
         db.commit()
+    except IntegrityError:
+        # Lost the dedup race: a concurrent request inserted the same sha256 between
+        # our pre-check above and this commit. The UNIQUE(sha256) constraint is the
+        # backstop that closes that window — resolve it exactly like the pre-check hit.
+        db.rollback()
+        dest.unlink(missing_ok=True)
+        thumb_path.unlink(missing_ok=True)
+        existing = db.query(Invoice).filter(Invoice.sha256 == file_hash).first()
+        if existing:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "duplicate": True,
+                    "existing": _invoice_to_dict(existing),
+                    "detail": "Diese Rechnung wurde bereits hochgeladen.",
+                },
+            )
+        # IntegrityError but nothing to point at — a genuine, unexpected failure.
+        # Don't mask it as a duplicate.
+        log.exception("upload: IntegrityError without a matching row for %s", stored_name)
+        raise HTTPException(status_code=500, detail="Speichern in der Datenbank fehlgeschlagen")
     except Exception:
         # A failed commit would otherwise leave the written file + thumbnail
         # orphaned on disk with no DB row pointing at them.

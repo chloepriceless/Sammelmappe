@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
+from . import db as db_module
 from .auth import SESSION_COOKIE, _validate_token, is_initialized
 from .config import settings, assert_secure_secret_key
 from .db import init_db
@@ -63,7 +64,12 @@ def setup_page():
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": True, "version": __version__}
+    body = {"ok": True, "version": __version__}
+    # Surface a degraded state the operator must act on: the sha256 UNIQUE backstop
+    # could not be installed because legacy duplicates are present (see db migration).
+    if db_module.sha256_unique_applied is False:
+        body["warnings"] = ["sha256_unique_constraint_not_applied_duplicates_present"]
+    return body
 
 
 # Static assets (manifest, sw, icons, css, js)
