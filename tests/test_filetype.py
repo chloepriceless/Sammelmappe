@@ -31,6 +31,31 @@ def test_sniff_heic_compatible_brand():
     assert filetype.sniff(HEIC_COMPAT) == filetype.HEIC
 
 
+def test_sniff_heic_major_brand_accepted_despite_zero_box_size():
+    # A real, recognised major brand is a strong signal — box size irrelevant.
+    raw = b"\x00\x00\x00\x00ftypheic\x00\x00\x00\x00" + b"\x00" * 8
+    assert filetype.sniff(raw) == filetype.HEIC
+
+
+def test_sniff_rejects_brand_outside_sane_box():
+    # Round-2 hardening: box size 0 used to trigger a whole-buffer brand scan, so
+    # a non-HEIF file whose payload merely contained 'mif1' passed as HEIC.
+    raw = b"\x00\x00\x00\x00ftypXXXX\x00\x00\x00\x00" + b"\x00" * 40 + b"mif1"
+    assert filetype.sniff(raw) is None
+
+
+def test_sniff_rejects_oversized_ftyp_box():
+    # Implausibly large declared box size with a compatible brand -> not HEIC.
+    raw = b"\x10\x00\x00\x00ftypXXXX\x00\x00\x00\x00mif1"
+    assert filetype.sniff(raw) is None
+
+
+def test_sniff_rejects_unaligned_ftyp_box():
+    # ftyp size must be 4-aligned (8 + 4 + 4 + 4*N); 0x21 is malformed.
+    raw = b"\x00\x00\x00\x21ftypXXXX\x00\x00\x00\x00mif1\x00"
+    assert filetype.sniff(raw) is None
+
+
 def test_sniff_xml_declaration():
     assert filetype.sniff(b'<?xml version="1.0"?><Invoice/>') == filetype.XML
 

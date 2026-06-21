@@ -29,19 +29,30 @@ _HEIF_BRANDS = {
 
 
 def _is_heif(raw: bytes) -> bool:
-    # ftyp box: [4-byte big-endian size][b"ftyp"][major brand][minor ver][compat brands...]
+    """Detect HEIF/HEIC still images from a *well-formed* leading ftyp box.
+
+    ftyp layout: [4B big-endian box size][b"ftyp"][major brand 4B][minor ver 4B]
+    [compatible brands 4B*N]. A known major brand is the strongest signal and is
+    accepted regardless of the declared size. Otherwise we only scan compatible
+    brands *inside a plausibly-sized box* (header 8 + major 4 + minor 4 + 4*N, so
+    4-aligned and >= 16). The previous version fell back to scanning the whole
+    buffer when the declared size was 0, which let a crafted non-HEIF file whose
+    payload merely *contained* brand-like 4 bytes pass as HEIC.
+    """
     if len(raw) < 12 or raw[4:8] != b"ftyp":
         return False
-    box_size = int.from_bytes(raw[0:4], "big")
-    # Major brand at 8:12, then compatible brands from offset 16 onwards.
-    if raw[8:12] in _HEIF_BRANDS:
+    if raw[8:12] in _HEIF_BRANDS:          # major brand — strongest signal
         return True
-    end = min(box_size if box_size else len(raw), len(raw))
-    off = 16
-    while off + 4 <= end:
+    box_size = int.from_bytes(raw[0:4], "big")
+    # Reject 0 ("box extends to EOF"), the 64-bit form (1), non-4-aligned and
+    # oversized declarations instead of scanning unbounded — real ftyp boxes are
+    # tiny (a handful of brands).
+    if box_size < 16 or box_size % 4 != 0 or box_size > 4096:
+        return False
+    end = min(box_size, len(raw))
+    for off in range(16, end - 3, 4):
         if raw[off:off + 4] in _HEIF_BRANDS:
             return True
-        off += 4
     return False
 
 
