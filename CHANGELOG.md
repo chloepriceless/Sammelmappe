@@ -9,7 +9,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 Drei Stufen: die 4 Release-Blocker (Branch `fix/release-blockers`) und die
 MEDIUM/LOW-Folge-Härtung (Branch `harden/medium-findings`) aus dem Qualitäts-Review
 vom 2026-06-14 (`.planning/RELEASE-REVIEW-2026-06-14-FINDINGS.md`), plus die
-nachgelagerte Round-2-Härtung (Branch `harden/round-2`). **200 → 245 Tests grün.**
+nachgelagerte Round-2-Härtung (Branch `harden/round-2`). **200 → 280 Tests grün.**
 
 ### Behoben — Release-Blocker (`fix/release-blockers`)
 
@@ -98,11 +98,32 @@ nachgelagerte Round-2-Härtung (Branch `harden/round-2`). **200 → 245 Tests gr
 - **GitHub-Actions-Pipeline** (`.github/workflows/ci.yml`): pytest auf Python 3.12 mit
   den OCR-/PDF-/QR-Systempaketen aus dem Dockerfile; least-privilege, concurrency-cancel.
 
+#### Korrektheit — OCR/Datum
+- **TSE-Belegdatum wird lokal (`Europe/Berlin`) bestimmt statt aus UTC.** Der
+  Kassenbeleg-Zeitstempel ist UTC; `.date()` darauf lag bei Belegen kurz nach
+  lokaler Mitternacht einen Tag zu früh — am Jahreswechsel landete der Beleg im
+  falschen **Steuerjahr** (§35a = Zahlungsjahr). Jetzt wird vor der Tagesableitung
+  nach Berlin konvertiert (DST-korrekt; naive Zeitstempel gelten als UTC). `tzdata`
+  ist Runtime-Dependency, damit die Zone auf jedem Deploy verfügbar ist.
+- **Claude-Primary ohne Betrag fällt auf Tesseract zurück.** Lieferte Claude (als
+  Primär-Engine) ein Ergebnis ohne Gesamtbetrag, wurde Tesseract nie befragt —
+  asymmetrisch zum Legacy-Pfad. Jetzt holt Tesseract den fehlenden Betrag nach; die
+  ausgewiesene Confidence ist das Minimum beider Engines (kein Über-Vertrauen in
+  einen Tesseract-Betrag unter Claude-Confidence).
+- **Datumserkennung versteht ISO 8601 (`YYYY-MM-DD`)** im gelabelten und im
+  Fallback-Pfad (vorher nur `TT.MM.JJJJ`/`-`/`/`).
+- **Fallback-Datumsfenster auf 3 Jahre erweitert** (war 2): Bauprojekte spannen
+  domänentypisch mehrere Jahre, spät gebündelte Belege sind real ~2,5 Jahre alt.
+
 ### Tests
 - **+13 Tests** (232 → 245): sha256-Migration (Konvertierung, Idempotenz, Composite-Index,
   Duplikat-Abbruch+Warnung, **Atomaritäts-Regression: alter Index überlebt fehlschlagendes
   `CREATE`**), Upload-Race → `409` ohne Orphan, IntegrityError-ohne-Treffer → `500`,
   `/healthz`-Warnsignal.
+- **+35 Tests** (245 → 280): **M7** — Engine-Auswahl von `ocr.extract()` (Claude-Primary,
+  Legacy-Quality-Fallback, TSE-QR-Override, E-Invoice-Shortcut, Defensiv-Pfade) mit
+  gemockten Engines; OCR/Datum-Korrektheit (UTC→Berlin-Belegdatum inkl. Jahreswechsel/DST,
+  Claude-leer→Tesseract-Rescue, ISO-Datum, 3-Jahres-Fenster).
 
 ## [1.6.1] — 2026-06-13
 

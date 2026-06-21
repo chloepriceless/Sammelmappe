@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import app.ocr as ocr
-from app.ocr import ExtractedInvoice, extract
+from app.ocr import ExtractedInvoice, extract, _receipt_local_date
 from app.tse_qr import TseReceipt
 
 PDF = "application/pdf"
@@ -142,6 +142,62 @@ def test_force_claude_makes_claude_primary(patched):
     patched.claude.assert_called_once()
     patched.tess.assert_not_called()
     assert res.engine == "claude"
+
+
+def test_claude_primary_empty_amount_rescued_by_tesseract(patched):
+    # Item 4: Claude succeeds but finds no total -> Tesseract supplies the amount.
+    patched.monkeypatch.setattr(ocr, "_runtime_prefer_claude", lambda: True)
+    patched.claude.return_value = ExtractedInvoice(
+        vendor="Claude Vendor", amount=None, invoice_number="C-9",
+        confidence=0.9, engine="claude",
+    )
+    patched.tess.return_value = ExtractedInvoice(
+        vendor="Tess Vendor", amount=77.0, invoice_date=date(2026, 4, 1),
+        confidence=0.5, engine="tesseract", raw_text="raw",
+    )
+    res = extract(PATH, PDF)
+    patched.claude.assert_called_once()
+    patched.tess.assert_called_once()
+    assert res.engine == "claude+tesseract"
+    assert res.amount == 77.0                     # amount from Tesseract
+    assert res.vendor == "Claude Vendor"          # Claude fields kept where present
+    assert res.invoice_number == "C-9"
+    assert res.invoice_date == date(2026, 4, 1)   # Claude None -> Tesseract fill
+    assert res.confidence == 0.5                  # min(0.9, 0.5) — honest, not over-trusted
+    assert res.raw_text == "raw"
+
+
+def test_claude_primary_empty_amount_and_tesseract_also_empty(patched):
+    # Item 4 edge: neither engine finds an amount -> keep Claude result untouched.
+    patched.monkeypatch.setattr(ocr, "_runtime_prefer_claude", lambda: True)
+    claude_res = ExtractedInvoice(
+        vendor="C", amount=None, confidence=0.9, engine="claude"
+    )
+    patched.claude.return_value = claude_res
+    patched.tess.return_value = ExtractedInvoice(
+        vendor="T", amount=None, confidence=0.4, engine="tesseract"
+    )
+    res = extract(PATH, PDF)
+    patched.tess.assert_called_once()             # Tesseract was tried...
+    assert res.engine == "claude"                 # ...but had nothing to offer
+    assert res.amount is None
+    assert res.confidence == 0.9
+
+
+def test_tse_override_uses_local_date_across_year_boundary(patched):
+    # Item 3: 23:30 UTC on 31 Dec is 00:30 Berlin on 1 Jan -> next year's receipt.
+    started = datetime(2025, 12, 31, 23, 30, tzinfo=timezone.utc)
+    receipt = TseReceipt(
+        total=12.0, breakdown={"19": 12.0}, started_at=started,
+        tx_number="TX-NY", raw="x",
+    )
+    patched.monkeypatch.setattr(ocr.tse_qr, "scan_image_for_tse", lambda page: receipt)
+    patched.tess.return_value = ExtractedInvoice(
+        vendor="Kasse", amount=1.0, confidence=0.9, engine="tesseract"
+    )
+    res = extract(PATH, PDF)
+    assert res.invoice_date == date(2026, 1, 1)   # local Berlin day, NOT UTC 2025-12-31
+    assert res.amount == 12.0
 
 
 # --- Claude disabled / unavailable ------------------------------------------
@@ -297,3 +353,28 @@ def test_no_pages_loaded_returns_failed(patched):
     assert res.engine == "failed"
     patched.tess.assert_not_called()
     patched.claude.assert_not_called()
+
+
+# --- _receipt_local_date helper (Item 3) ------------------------------------
+
+def test_receipt_local_date_year_boundary():
+    # 23:30 UTC on New Year's Eve is already 00:30 the next year in Berlin.
+    dt = datetime(2025, 12, 31, 23, 30, tzinfo=timezone.utc)
+    assert _receipt_local_date(dt) == date(2026, 1, 1)
+
+
+def test_receipt_local_date_naive_treated_as_utc():
+    # Naive TSE timestamps are documented UTC, not local wall-clock time.
+    assert _receipt_local_date(datetime(2025, 12, 31, 23, 30)) == date(2026, 1, 1)
+
+
+def test_receipt_local_date_respects_summer_dst():
+    # July: Berlin is UTC+2 (CEST). 22:30 UTC -> 00:30 local the next day.
+    dt = datetime(2026, 7, 15, 22, 30, tzinfo=timezone.utc)
+    assert _receipt_local_date(dt) == date(2026, 7, 16)
+
+
+def test_receipt_local_date_midday_unchanged():
+    # A daytime instant maps to the same calendar day in both zones.
+    dt = datetime(2026, 3, 15, 9, 30, tzinfo=timezone.utc)
+    assert _receipt_local_date(dt) == date(2026, 3, 15)

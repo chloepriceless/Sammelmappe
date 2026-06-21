@@ -1,6 +1,6 @@
 """Unit tests for the OCR helpers (no Tesseract / no Claude calls)."""
 import re
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -128,6 +128,29 @@ def test_date_extraction_ignores_future_dates():
     text = "Fälligkeit: 99.99.9999\nDatum: 12.05.2026"
     # 99.99.9999 isn't a valid date — parser returns None for it
     assert extract_date(text) == date(2026, 5, 12)
+
+
+def test_date_extraction_handles_iso_format():
+    # ISO 8601 (YYYY-MM-DD) in the unlabelled fallback path.
+    d = date.today() - timedelta(days=30)
+    assert extract_date(f"Beleg {d.isoformat()} Betrag 50,00") == d
+
+
+def test_date_extraction_handles_iso_labelled():
+    d = date.today() - timedelta(days=10)
+    assert extract_date(f"Rechnungsdatum: {d.isoformat()}") == d
+
+
+def test_date_extraction_accepts_dates_within_three_years():
+    # Construction projects span years — a ~2.2-year-old receipt (was rejected by
+    # the old 2-year window) must now be accepted in the fallback path.
+    old = date.today() - timedelta(days=800)
+    assert extract_date(f"Leistungszeitraum {old.strftime('%d.%m.%Y')}") == old
+
+
+def test_date_extraction_ignores_dates_older_than_three_years():
+    old = date.today() - timedelta(days=1200)  # beyond the 3-year window
+    assert extract_date(f"gegründet am {old.strftime('%d.%m.%Y')}") is None
 
 
 def test_vendor_extraction_picks_first_real_line():

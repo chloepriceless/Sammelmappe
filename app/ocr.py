@@ -14,8 +14,9 @@ import json
 import logging
 import re
 from dataclasses import dataclass, asdict
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pytesseract
 from PIL import Image, ImageOps, ImageFilter
@@ -26,6 +27,34 @@ from . import tse_qr
 from . import einvoice
 
 log = logging.getLogger(__name__)
+
+# Receipts are German Kassenbelege; their calendar day is the local (Europe/Berlin)
+# day, not the server's or UTC's. Resolve the zone once at import — if the platform
+# lacks IANA tzdata we log loudly rather than silently mis-dating receipts (the
+# `tzdata` wheel in requirements.txt guarantees availability across deploys).
+try:
+    _RECEIPT_TZ: ZoneInfo | None = ZoneInfo("Europe/Berlin")
+except ZoneInfoNotFoundError:  # pragma: no cover - only without tzdata installed
+    log.error("Europe/Berlin timezone unavailable (install tzdata); "
+              "receipt dates fall back to UTC and may be off by one near midnight")
+    _RECEIPT_TZ = None
+
+
+def _receipt_local_date(dt: datetime) -> date:
+    """Local (Europe/Berlin) calendar date of a TSE transaction timestamp.
+
+    TSE timestamps are documented UTC; a naive value is therefore interpreted as
+    UTC, not as wall-clock local time. Taking ``dt.date()`` on the UTC instant is
+    off by one for receipts issued just after local midnight (e.g. 00:30 Berlin =
+    23:30 UTC the previous day) — at the turn of the year that misattributes the
+    §35a payment year. ``astimezone`` also handles DST correctly.
+    """
+    if dt.tzinfo is None or dt.utcoffset() is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    if _RECEIPT_TZ is None:
+        return dt.date()
+    return dt.astimezone(_RECEIPT_TZ).date()
+
 
 # Anthropic is optional — module-level import would crash setup if missing key.
 try:
@@ -111,7 +140,11 @@ AMOUNT_RE = re.compile(
 )
 
 DATE_RE = re.compile(
-    r"\b(?P<d>\d{1,2})[.\-/](?P<m>\d{1,2})[.\-/](?P<y>\d{2,4})\b"
+    r"\b(?:"
+    r"\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}"   # DD.MM.YYYY / DD-MM-YYYY / DD/MM/YYYY
+    r"|"
+    r"\d{4}-\d{2}-\d{2}"                     # ISO 8601: YYYY-MM-DD
+    r")\b"
 )
 
 INVOICE_NO_RE = re.compile(
@@ -326,11 +359,13 @@ def extract_date(text: str) -> date | None:
     """Pick the most plausible invoice date.
 
     Heuristic: prefer dates labelled (Rechnungsdatum/Datum), else the latest date that
-    isn't in the future and isn't more than 2 years past — that's typically the invoice date.
+    isn't in the future and isn't more than 3 years past — that's typically the invoice
+    date. The window is 3 years because construction projects (the target domain) routinely
+    span multiple years, so receipts bundled at the end can legitimately be ~2.5 years old.
     """
     labelled = re.search(
         r"(?:rechnungsdatum|datum|leistungsdatum)\s*[:\-]?\s*"
-        r"(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})",
+        r"(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4}|\d{4}-\d{2}-\d{2})",
         text,
         re.IGNORECASE,
     )
@@ -343,7 +378,7 @@ def extract_date(text: str) -> date | None:
     candidates: list[date] = []
     for m in DATE_RE.finditer(text):
         d = _parse_date(m.group(0))
-        if d and d <= today and (today - d).days < 730:
+        if d and d <= today and (today - d).days < 1095:
             candidates.append(d)
     return max(candidates) if candidates else None
 
@@ -702,6 +737,26 @@ def extract(path: Path, mime: str, force_claude: bool = False, skip_claude: bool
         except Exception as e:
             log.warning("Claude primary call failed, falling back to Tesseract: %s", e)
 
+        # Claude answered but couldn't find the total — give Tesseract a shot at
+        # that one critical field (mirrors the legacy path's amount-missing
+        # trigger). The amount then comes from the weaker engine, so report the
+        # lower of the two confidences instead of Claude's, so downstream
+        # thresholds / the review UI don't over-trust a Tesseract-sourced total.
+        if final is not None and final.amount is None:
+            log.info("Claude primary returned no amount; trying Tesseract for the total")
+            tesseract_result = _run_tesseract_on_pages(pages)
+            if tesseract_result.amount is not None:
+                final = ExtractedInvoice(
+                    vendor=final.vendor or tesseract_result.vendor,
+                    amount=tesseract_result.amount,
+                    currency=final.currency or tesseract_result.currency,
+                    invoice_date=final.invoice_date or tesseract_result.invoice_date,
+                    invoice_number=final.invoice_number or tesseract_result.invoice_number,
+                    confidence=min(final.confidence, tesseract_result.confidence),
+                    engine="claude+tesseract",
+                    raw_text=tesseract_result.raw_text,
+                )
+
     if final is None:
         tesseract_result = _run_tesseract_on_pages(pages)
 
@@ -741,7 +796,7 @@ def extract(path: Path, mime: str, force_claude: bool = False, skip_claude: bool
             vendor=final.vendor,
             amount=tse.total,
             currency="EUR",
-            invoice_date=tse.started_at.date() if tse.started_at else final.invoice_date,
+            invoice_date=_receipt_local_date(tse.started_at) if tse.started_at else final.invoice_date,
             invoice_number=final.invoice_number or tse.tx_number,
             confidence=0.99,
             engine=f"qr+{final.engine}",
