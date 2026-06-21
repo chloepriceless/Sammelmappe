@@ -34,6 +34,47 @@ app.include_router(stats_routes.router)
 app.include_router(settings_routes.router)
 
 
+# Defense-in-depth security headers on every response. The app loads only
+# same-origin assets (no CDN/fonts/inline scripts — the three former inline
+# <script>s now live in /static/*.js), so a strict CSP costs nothing and is a
+# backstop for any field that escapes HTML-escaping (app.js already escapes
+# extracted invoice fields). Served invoice files are opened top-level
+# (window.open) or as <img>, never framed, so frame-ancestors/X-Frame-Options
+# don't break the inline-PDF UX. No HSTS — the app may run over plain HTTP on a
+# LAN (COOKIE_SECURE is configurable); TLS/HSTS is a reverse-proxy concern.
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "connect-src 'self'; "
+    "font-src 'self'; "
+    "manifest-src 'self'; "
+    "worker-src 'self'; "
+    "object-src 'none'; "
+    "frame-src 'none'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
+_SECURITY_HEADERS = {
+    "Content-Security-Policy": _CSP,
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+}
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    # setdefault: never clobber a header a route set deliberately (e.g. a
+    # file-serve endpoint's own Content-Disposition / nosniff).
+    for name, value in _SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+    return response
+
+
 def _is_authed(request: Request) -> bool:
     token = request.cookies.get(SESSION_COOKIE)
     return bool(token and _validate_token(token))

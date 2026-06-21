@@ -9,7 +9,7 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 Drei Stufen: die 4 Release-Blocker (Branch `fix/release-blockers`) und die
 MEDIUM/LOW-Folge-Härtung (Branch `harden/medium-findings`) aus dem Qualitäts-Review
 vom 2026-06-14 (`.planning/RELEASE-REVIEW-2026-06-14-FINDINGS.md`), plus die
-nachgelagerte Round-2-Härtung (Branch `harden/round-2`). **200 → 280 Tests grün.**
+nachgelagerte Round-2-Härtung (Branch `harden/round-2`). **200 → 286 Tests grün.**
 
 ### Behoben — Release-Blocker (`fix/release-blockers`)
 
@@ -94,6 +94,19 @@ nachgelagerte Round-2-Härtung (Branch `harden/round-2`). **200 → 280 Tests gr
   **nicht** angelegt und **keine Zeile gelöscht**; stattdessen warnt der Start laut und
   `/healthz` meldet den Zustand, bis der Betreiber manuell bereinigt.
 
+#### Security — HTTP-Header / CSP
+- **Content-Security-Policy + Security-Header auf jeder Response** (globale Middleware):
+  strenge `script-src 'self'` (kein `'unsafe-inline'`), dazu `default-src/connect-src/
+  img-src/worker-src 'self'`, `object-src/frame-src/frame-ancestors 'none'`,
+  `base-uri/form-action 'self'`, plus `X-Frame-Options: DENY`, `Referrer-Policy:
+  no-referrer`, `X-Content-Type-Options: nosniff`. Defense-in-Depth für die bewusst
+  inline gerenderten Belege (M3) und Backstop gegen Stored-XSS aus extrahierten
+  Feldern (die App escaped sie bereits an der Quelle). Kein HSTS — die App darf im LAN
+  über HTTP laufen (`COOKIE_SECURE` konfigurierbar); TLS/HSTS ist Reverse-Proxy-Sache.
+- **Inline-`<script>` aus den HTML-Seiten ausgelagert** (`static/sw-register.js`,
+  `login.js`, `setup.js`) — Voraussetzung für die strenge `script-src` ohne
+  `'unsafe-inline'`. Verhalten unverändert; Forms behalten ihren No-JS-`POST`-Fallback.
+
 #### Build/CI
 - **GitHub-Actions-Pipeline** (`.github/workflows/ci.yml`): pytest auf Python 3.12 mit
   den OCR-/PDF-/QR-Systempaketen aus dem Dockerfile; least-privilege, concurrency-cancel.
@@ -124,6 +137,8 @@ nachgelagerte Round-2-Härtung (Branch `harden/round-2`). **200 → 280 Tests gr
   Legacy-Quality-Fallback, TSE-QR-Override, E-Invoice-Shortcut, Defensiv-Pfade) mit
   gemockten Engines; OCR/Datum-Korrektheit (UTC→Berlin-Belegdatum inkl. Jahreswechsel/DST,
   Claude-leer→Tesseract-Rescue, ISO-Datum, 3-Jahres-Fenster).
+- **+6 Tests** (280 → 286): CSP/Security-Header auf Normal-/Static-/Fehler-Responses,
+  strikte `script-src`-Regression (kein `'unsafe-inline'`), kein HSTS.
 
 ## [1.6.1] — 2026-06-13
 

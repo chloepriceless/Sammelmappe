@@ -312,12 +312,6 @@
 <div class="toast-stack" id="toasts"></div>
 
 <script src="/static/app.js"></script>
-<script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
-    });
-  }
-</script>
+<script src="/static/sw-register.js"></script>
 </body>
 </html>
