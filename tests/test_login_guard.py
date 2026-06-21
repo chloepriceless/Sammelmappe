@@ -125,3 +125,27 @@ def test_login_endpoint_blocks_after_max_fails():
     assert blocked.status_code == 429
     assert int(blocked.headers["Retry-After"]) > 0
     login_guard.reset()
+
+
+# --- memory bound / eviction (an IP flood must not grow memory unbounded) ----
+
+def test_memory_is_bounded_by_max_tracked_ips(monkeypatch):
+    monkeypatch.setattr(login_guard, "MAX_TRACKED_IPS", 5)
+    # 20 distinct IPs, all "now" (none expired) — the cap must still hold.
+    for i in range(20):
+        login_guard.register_attempt(f"10.0.0.{i}", now=T0)
+    assert len(login_guard._failures) <= 5
+
+
+def test_eviction_drops_expired_buckets_before_live_ones(monkeypatch):
+    monkeypatch.setattr(login_guard, "MAX_TRACKED_IPS", 3)
+    login_guard.register_attempt("1.1.1.1", now=T0)            # will be expired
+    login_guard.register_attempt("2.2.2.2", now=T0)            # will be expired
+    login_guard.register_attempt("3.3.3.3", now=T0 + 10 * W)   # recent
+    # At cap; a new IP at the recent time evicts the two expired buckets first.
+    login_guard.register_attempt("4.4.4.4", now=T0 + 10 * W)
+    assert "3.3.3.3" in login_guard._failures   # live bucket survives
+    assert "4.4.4.4" in login_guard._failures   # new attempt recorded
+    assert "1.1.1.1" not in login_guard._failures
+    assert "2.2.2.2" not in login_guard._failures
+    assert len(login_guard._failures) <= 3
