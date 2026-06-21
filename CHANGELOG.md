@@ -6,10 +6,14 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
-Drei Stufen: die 4 Release-Blocker (Branch `fix/release-blockers`) und die
-MEDIUM/LOW-Folge-Härtung (Branch `harden/medium-findings`) aus dem Qualitäts-Review
-vom 2026-06-14 (`.planning/RELEASE-REVIEW-2026-06-14-FINDINGS.md`), plus die
-nachgelagerte Round-2-Härtung (Branch `harden/round-2`). **200 → 286 Tests grün.**
+## [1.7.0] — 2026-06-21
+
+Konsolidierter Sicherheits-/Härtungs-Release aus drei aufeinander gestapelten
+Stufen: die 4 Release-Blocker (`fix/release-blockers`) und die MEDIUM/LOW-Folge-
+Härtung (`harden/medium-findings`) aus dem Qualitäts-Review vom 2026-06-14, plus die
+nachgelagerte Round-2-Härtung (`harden/round-2`). Security-Clear (R22) durch
+security-master für den gesamten Branch. **200 → 292 Tests grün.** MINOR-Bump wegen
+des neuen CSP-/Security-Header-Features.
 
 ### Behoben — Release-Blocker (`fix/release-blockers`)
 
@@ -301,6 +305,7 @@ nachgelagerte Round-2-Härtung (Branch `harden/round-2`). **200 → 286 Tests gr
   Status-Tracking, Einreichungs-Historie, Duplikat-Erkennung, Kategorien,
   Auth (Argon2), Proxmox-/Docker-Setup.
 
+[1.7.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.7.0
 [1.6.1]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.6.1
 [1.6.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.6.0
 [1.5.0]: https://github.com/chloepriceless/Sammelmappe/releases/tag/v1.5.0
