@@ -892,3 +892,38 @@ a { color: var(--accent); text-decoration: none; }
   vertical-align: -3px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Schwach-Passwort-Hinweis (Banner oben in der App-Shell) */
+.pw-weak-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--warning-soft);
+  color: var(--text);
+  border-bottom: 1px solid var(--warning);
+  font-size: 14px;
+}
+.pw-weak-banner .pw-weak-msg { flex: 1; }
+.pw-weak-banner .pw-weak-change {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  background: var(--warning);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pw-weak-banner .pw-weak-change:active { transform: scale(0.98); }
+.pw-weak-banner .pw-weak-dismiss {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}

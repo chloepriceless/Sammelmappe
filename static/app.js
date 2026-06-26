@@ -977,8 +977,80 @@ async function renderSection35a() {
   }
 }
 
+// --- Passwort ändern + Schwach-PW-Hinweis ---------------------------------
+function getCookie(name) {
+  const hit = document.cookie.split('; ').find(c => c.startsWith(name + '='));
+  return hit ? hit.slice(name.length + 1) : null;
+}
+function clearWeakPwBanner() {
+  document.cookie = 'brs_pw_weak=; Max-Age=0; path=/';
+  $('#pw-weak-banner')?.remove();
+}
+function openSettingsToPwSection() {
+  clearWeakPwBanner();            // acting on the nudge dismisses it
+  openSettings();
+  setTimeout(() => {             // let the modal render, then reveal the section
+    $('#pw-change-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    $('#pw-current')?.focus();
+  }, 60);
+}
+function maybeShowWeakPwBanner() {
+  if (getCookie('brs_pw_weak') !== '1' || $('#pw-weak-banner')) return;
+  const shell = $('.app-shell');
+  if (!shell) return;
+  const banner = document.createElement('div');
+  banner.id = 'pw-weak-banner';
+  banner.className = 'pw-weak-banner';
+  const msg = document.createElement('span');
+  msg.className = 'pw-weak-msg';
+  msg.textContent = '🔒 Dein Passwort ist kürzer als 10 Zeichen. Bitte in den Einstellungen aktualisieren.';
+  const change = document.createElement('button');
+  change.type = 'button';
+  change.className = 'pw-weak-change';
+  change.textContent = 'Jetzt ändern';
+  change.addEventListener('click', openSettingsToPwSection);
+  const dismiss = document.createElement('button');
+  dismiss.type = 'button';
+  dismiss.className = 'pw-weak-dismiss';
+  dismiss.setAttribute('aria-label', 'Hinweis schließen');
+  dismiss.textContent = '×';
+  dismiss.addEventListener('click', clearWeakPwBanner);
+  banner.append(msg, change, dismiss);
+  shell.prepend(banner);
+}
+
+$('#pw-change').addEventListener('click', async () => {
+  const cur = $('#pw-current').value;
+  const nw = $('#pw-new').value;
+  const nw2 = $('#pw-new2').value;
+  const st = $('#pw-status');
+  const setStatus = (text, cls) => { st.textContent = text; st.className = `status-row ${cls}`; };
+  if (!cur || !nw || !nw2) { setStatus('Bitte alle Felder ausfüllen.', 'warn'); return; }
+  if (nw !== nw2) { setStatus('Neue Passwörter stimmen nicht überein.', 'err'); return; }
+  if (nw.length < 10) { setStatus('Neues Passwort muss mindestens 10 Zeichen lang sein.', 'err'); return; }
+  if (nw === cur) { setStatus('Neues Passwort muss sich vom alten unterscheiden.', 'err'); return; }
+  const btn = $('#pw-change');
+  btn.disabled = true;
+  try {
+    const fd = new FormData();
+    fd.append('current_password', cur);
+    fd.append('new_password', nw);
+    fd.append('new_password_confirm', nw2);
+    await api('/api/auth/change-password', { method: 'POST', body: fd });
+    $('#pw-current').value = $('#pw-new').value = $('#pw-new2').value = '';
+    setStatus('✓ Passwort geändert.', 'ok');
+    clearWeakPwBanner();
+    toast('Passwort geändert', 'success');
+  } catch (e) {
+    setStatus(`Fehler: ${e.message}`, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 // --- Init -----------------------------------------------------------------
 loadInvoices();
+maybeShowWeakPwBanner();
 
 // Refresh when tab becomes visible again (e.g. switching apps on phone)
 document.addEventListener('visibilitychange', () => {

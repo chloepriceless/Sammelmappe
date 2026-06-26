@@ -149,3 +149,39 @@ def test_eviction_drops_expired_buckets_before_live_ones(monkeypatch):
     assert "1.1.1.1" not in login_guard._failures
     assert "2.2.2.2" not in login_guard._failures
     assert len(login_guard._failures) <= 3
+
+
+# --- password-change bucket: independent from login --------------------------
+
+def test_pw_change_bucket_is_independent_from_login():
+    PM = login_guard.MAX_PW_CHANGE_FAILS
+    for _ in range(PM):
+        assert login_guard.register_pw_change_attempt("9.9.9.9", now=T0) == 0
+    assert login_guard.register_pw_change_attempt("9.9.9.9", now=T0) > 0
+    # The login bucket for the SAME IP must be untouched by a change-password lockout.
+    assert login_guard.seconds_until_unblock("9.9.9.9", now=T0) == 0
+    assert login_guard.register_attempt("9.9.9.9", now=T0) == 0
+
+
+def test_login_lockout_does_not_block_pw_change():
+    for _ in range(M):
+        assert login_guard.register_attempt("8.8.8.8", now=T0) == 0
+    assert login_guard.register_attempt("8.8.8.8", now=T0) > 0
+    # Same IP can still attempt a password change — different bucket.
+    assert login_guard.register_pw_change_attempt("8.8.8.8", now=T0) == 0
+
+
+def test_clear_pw_change_unblocks_immediately():
+    for _ in range(login_guard.MAX_PW_CHANGE_FAILS):
+        login_guard.register_pw_change_attempt("7.7.7.7", now=T0)
+    assert login_guard.register_pw_change_attempt("7.7.7.7", now=T0) > 0
+    login_guard.clear_pw_change("7.7.7.7")
+    assert login_guard.register_pw_change_attempt("7.7.7.7", now=T0) == 0
+
+
+def test_pw_change_bucket_memory_is_bounded(monkeypatch):
+    # The password-change bucket honours its OWN cap (shares the eviction code path).
+    monkeypatch.setattr(login_guard, "MAX_TRACKED_PW_IPS", 5)
+    for i in range(20):
+        login_guard.register_pw_change_attempt(f"10.1.1.{i}", now=T0)
+    assert len(login_guard._pw_failures) <= 5

@@ -33,7 +33,7 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/chloepriceless/Sammelmap
 - **🌓 Dark Mode** — folgt System-Einstellung.
 - **🔍 Suche** — Vendor, Rechnungsnummer, Original-Dateiname, Notizen.
 - **🖱️ Drag & Drop** auf dem Desktop.
-- **🛡️ Auth** — Passwort beim ersten Start; signed Session-Cookie (Argon2-Hash).
+- **🛡️ Auth** — Passwort beim ersten Start; signed Session-Cookie (Argon2-Hash). Passwort jederzeit in den Einstellungen änderbar; ein zu kurzes Bestands-Passwort weist dich beim Login dezent auf ein Update hin.
 
 ---
 

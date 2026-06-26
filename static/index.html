@@ -276,6 +276,20 @@
       <div class="field"><label>Einzugsdatum</label><input id="set-move-in" type="date"></div>
     </div>
 
+    <div class="modal-section" id="pw-change-section">
+      <div class="modal-section-label">Passwort ändern</div>
+      <div class="field"><label>Aktuelles Passwort</label>
+        <input id="pw-current" type="password" autocomplete="current-password"></div>
+      <div class="field"><label>Neues Passwort (mind. 10 Zeichen)</label>
+        <input id="pw-new" type="password" autocomplete="new-password" minlength="10"></div>
+      <div class="field"><label>Neues Passwort bestätigen</label>
+        <input id="pw-new2" type="password" autocomplete="new-password" minlength="10"></div>
+      <div class="status-row" id="pw-status">—</div>
+      <div class="action-row">
+        <button id="pw-change" class="ghost">Passwort ändern</button>
+      </div>
+    </div>
+
     <div class="modal-actions">
       <button id="set-cancel">Schließen</button>
       <button id="set-save" class="primary">Speichern</button>

@@ -6,6 +6,31 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [1.8.0] — 2026-06-26
+
+Feature-Release: Passwort-Ändern-Funktion + Hinweis auf schwache Bestands-Passwörter.
+Auth-kritischer Diff, Codex-refute't (Plan + Diff, Blocker zur Rate-Limit-Zählsemantik
+gefunden und behoben). **292 → 307 Tests grün.**
+
+### Hinzugefügt
+- **Passwort ändern in der App.** Neuer Endpoint `POST /api/auth/change-password`
+  (auth-geschützt) plus „Passwort ändern"-Sektion im Einstellungen-Dialog. Bisher ließ
+  sich ein einmal gesetztes Passwort nur per direktem DB-Eingriff ändern — es gab schlicht
+  keine UI dafür. Verlangt das aktuelle Passwort, erzwingt für das neue die Mindestlänge
+  (10 Zeichen) und lehnt ein unverändertes oder abweichend bestätigtes Passwort ab.
+- **Hinweis auf zu kurze Bestands-Passwörter.** Wer sich mit einem vor der Mindestlängen-
+  Anhebung gesetzten Passwort (< 10 Zeichen) anmeldet, bekommt ein dezentes, schließbares
+  Banner mit Direktlink zum Ändern. Die Schwäche ist nur beim Login erkennbar — der
+  Argon2-Hash gibt die Klartextlänge nicht preis.
+
+### Sicherheit
+- **Eigener Brute-Force-Limiter für die Passwortänderung** — separater Bucket, getrennt vom
+  Login-Limiter: eine gesperrte Änderung kann den Login nicht aussperren und umgekehrt. Es
+  zählt ausschließlich ein falsches *aktuelles* Passwort; ein vertipptes *neues* Passwort
+  sperrt den Nutzer nicht aus seinem eigenen Änderungsvorgang.
+- Falsches aktuelles Passwort → HTTP 400 (nicht 401), damit eine noch gültige Session nicht
+  fälschlich ausgeloggt wird.
+
 ## [1.7.0] — 2026-06-21
 
 Konsolidierter Sicherheits-/Härtungs-Release aus drei aufeinander gestapelten

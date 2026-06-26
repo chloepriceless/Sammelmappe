@@ -33,8 +33,19 @@ WINDOW_SECONDS = 900          # 15 minutes
 MAX_FAILS = 10                # block after this many attempts inside the window
 MAX_TRACKED_IPS = 10_000      # hard cap so an IP flood can't grow memory unbounded
 
+# A second, independent bucket guards the authenticated password-change endpoint.
+# A change always requires the current password, so a blind CSRF can't succeed — but
+# an authenticated-yet-malicious session (shared machine, hijacked cookie) could
+# otherwise brute-force `current_password`. Argon2 already throttles each try; this
+# caps the volume on top. Its OWN bucket, never shared with login, so a failed change
+# can't lock out /login (and vice versa). Lower IP cap: change attempts come only from
+# already-authenticated sessions, far lower cardinality than public login traffic.
+MAX_PW_CHANGE_FAILS = 10
+MAX_TRACKED_PW_IPS = 1_000
+
 _lock = threading.Lock()
 _failures: dict[str, deque[float]] = {}
+_pw_failures: dict[str, deque[float]] = {}
 
 
 def _norm_ip(value: str) -> str | None:
@@ -69,29 +80,44 @@ def _retry_after_locked(dq: deque[float], now: float) -> int:
     return max(1, math.ceil(dq[0] + WINDOW_SECONDS - now))
 
 
-def register_attempt(ip: str, now: float | None = None) -> int:
-    """Atomically check-and-record one login attempt.
+def _register_locked(
+    failures: dict[str, deque[float]], ip: str, max_fails: int, max_tracked: int, now: float
+) -> int:
+    """Caller holds ``_lock``. Atomically check-and-record one attempt in ``failures``.
 
     Returns 0 if the attempt is allowed (and records it); otherwise returns the
     seconds until the block lifts WITHOUT recording (so continued spamming during a
     lockout neither extends it nor grows memory). Counting + block-check share one
-    lock, closing the check-then-record race."""
+    lock, closing the check-then-record race. Shared by the login and the
+    password-change buckets so both behave identically."""
+    dq = failures.get(ip)
+    if dq is not None:
+        _prune(dq, now)
+        if not dq:
+            failures.pop(ip, None)
+            dq = None
+    if dq is not None and len(dq) >= max_fails:
+        return _retry_after_locked(dq, now)
+    if dq is None:
+        if len(failures) >= max_tracked:
+            _evict_locked(failures, max_tracked, now)
+        dq = failures.setdefault(ip, deque())
+    dq.append(now)
+    return 0
+
+
+def register_attempt(ip: str, now: float | None = None) -> int:
+    """Atomically check-and-record one login attempt (see ``_register_locked``)."""
     now = time.time() if now is None else now
     with _lock:
-        dq = _failures.get(ip)
-        if dq is not None:
-            _prune(dq, now)
-            if not dq:
-                _failures.pop(ip, None)
-                dq = None
-        if dq is not None and len(dq) >= MAX_FAILS:
-            return _retry_after_locked(dq, now)
-        if dq is None:
-            if len(_failures) >= MAX_TRACKED_IPS:
-                _evict_locked(now)
-            dq = _failures.setdefault(ip, deque())
-        dq.append(now)
-        return 0
+        return _register_locked(_failures, ip, MAX_FAILS, MAX_TRACKED_IPS, now)
+
+
+def register_pw_change_attempt(ip: str, now: float | None = None) -> int:
+    """Atomically check-and-record one password-change attempt (separate bucket)."""
+    now = time.time() if now is None else now
+    with _lock:
+        return _register_locked(_pw_failures, ip, MAX_PW_CHANGE_FAILS, MAX_TRACKED_PW_IPS, now)
 
 
 def seconds_until_unblock(ip: str, now: float | None = None) -> int:
@@ -111,23 +137,30 @@ def seconds_until_unblock(ip: str, now: float | None = None) -> int:
 
 
 def clear(ip: str) -> None:
-    """Drop an IP's record — call on successful login."""
+    """Drop an IP's login record — call on successful login."""
     with _lock:
         _failures.pop(ip, None)
+
+
+def clear_pw_change(ip: str) -> None:
+    """Drop an IP's password-change record — call on successful change."""
+    with _lock:
+        _pw_failures.pop(ip, None)
 
 
 def reset() -> None:
-    """Test helper: forget all tracked IPs."""
+    """Test helper: forget all tracked IPs (both buckets)."""
     with _lock:
         _failures.clear()
+        _pw_failures.clear()
 
 
-def _evict_locked(now: float) -> None:
+def _evict_locked(failures: dict[str, deque[float]], max_tracked: int, now: float) -> None:
     # Caller holds _lock. Drop fully-expired buckets first; if still full, drop the
     # one whose most recent attempt is oldest.
     cutoff = now - WINDOW_SECONDS
-    for ip in [ip for ip, dq in _failures.items() if not dq or dq[-1] <= cutoff]:
-        _failures.pop(ip, None)
-    if len(_failures) >= MAX_TRACKED_IPS:
-        oldest = min(_failures, key=lambda ip: _failures[ip][-1] if _failures[ip] else 0.0)
-        _failures.pop(oldest, None)
+    for ip in [ip for ip, dq in failures.items() if not dq or dq[-1] <= cutoff]:
+        failures.pop(ip, None)
+    if len(failures) >= max_tracked:
+        oldest = min(failures, key=lambda ip: failures[ip][-1] if failures[ip] else 0.0)
+        failures.pop(oldest, None)
