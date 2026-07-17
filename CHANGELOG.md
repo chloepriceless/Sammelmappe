@@ -6,6 +6,24 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [1.8.1] — 2026-07-17
+
+Sicherheits-Release: Dependency-Audit (pip-audit) nach externem Vuln-Hinweis — alle
+Pins mit bekannten Advisories auf gefixte Versionen gehoben. **307 Tests grün,
+pip-audit: 0 bekannte Schwachstellen.**
+
+### Sicherheit
+- **python-multipart 0.0.20 → 0.0.32.** Schließt u.a. CVE-2026-53539 /
+  GHSA-5rvq-cxj2-64vf (HIGH): quadratisches Parsing von Semikolon-separierten
+  `x-www-form-urlencoded`-Bodies → CPU-DoS (gemessen: 1-MiB-Body 6,1 s auf 0.0.20,
+  0,0 s auf 0.0.32). Dazu fünf weitere Advisories (Parameter-Smuggling, unbounded
+  Part-Header/Preamble-DoS, Negative-Content-Length-Buffering), Fixes bis 0.0.31.
+- **fastapi 0.115.5 → 0.139.2 + starlette explizit auf 1.3.1 gepinnt.** Die transitiv
+  gezogene starlette 0.41.3 hatte neun offene Advisories (Fixes bis 1.3.1).
+- **pillow 11.0.0 → 12.3.0** (13 Advisories, Fixes bis 12.3.0).
+- **pypdf 5.1.0 → 6.14.2** (31 Advisories, Fixes bis 6.13.3).
+- **python-dotenv 1.0.1 → 1.2.2** (PYSEC-2026-2270).
+
 ## [1.8.0] — 2026-06-26
 
 Feature-Release: Passwort-Ändern-Funktion + Hinweis auf schwache Bestands-Passwörter.
