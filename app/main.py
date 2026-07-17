@@ -2,13 +2,14 @@ import logging
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from . import db as db_module
 from .auth import SESSION_COOKIE, _validate_token, is_initialized
 from .config import settings, assert_secure_secret_key
+from .csrf import csrf_block_reason, csrf_extra_trusted
 from .db import init_db
 from .routes import auth as auth_routes
 from .routes import export as export_routes
@@ -63,6 +64,38 @@ _SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",
 }
+
+
+@app.middleware("http")
+async def csrf_guard(request: Request, call_next):
+    # X-Forwarded-Host zählt nur, wenn der Request nachweislich vom
+    # konfigurierten Reverse-Proxy kommt — gleiche Vertrauensbasis wie beim
+    # X-Forwarded-For des Login-Rate-Limits.
+    client_ip = request.client.host if request.client else ""
+    trust_xfh = bool(client_ip) and client_ip in settings.trusted_proxies_set
+    reason = csrf_block_reason(
+        request.method,
+        request.headers,
+        csrf_extra_trusted(),
+        trust_xfh=trust_xfh,
+        strict=settings.csrf_strict,
+    )
+    if reason is not None:
+        # Host/XFH mitloggen: ein 403-Sturm nach Proxy-Umbau ist so sofort als
+        # Fehlkonfiguration (Host nicht durchgereicht) diagnostizierbar.
+        log.warning(
+            "CSRF-Block %s %s: %s (Host=%r, X-Forwarded-Host=%r)",
+            request.method,
+            request.url.path,
+            reason,
+            request.headers.get("host"),
+            request.headers.get("x-forwarded-host"),
+        )
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Cross-Site-Request blockiert (CSRF-Schutz)."},
+        )
+    return await call_next(request)
 
 
 @app.middleware("http")

@@ -16,6 +16,21 @@ class Settings(BaseSettings):
     # send the cookie back over http:// and login silently fails.
     cookie_secure: bool = True
 
+    # Comma-separated extra hostnames (optionally host:port) that mutating
+    # browser requests may originate from, matched against the Origin header.
+    # Normally EMPTY: the CSRF middleware already accepts Origins matching the
+    # request's Host / X-Forwarded-Host. Only needed for exotic reverse-proxy
+    # setups that rewrite Host to an internal name without setting
+    # X-Forwarded-Host (the middleware logs blocked requests with both values).
+    csrf_trusted_origins: str = ""
+
+    # Strict CSRF mode: also reject mutating requests that carry NEITHER
+    # Sec-Fetch-Site NOR Origin. Default off — that class is non-browser
+    # clients (curl, scripts) plus pre-2019 browsers; blocking it breaks API
+    # scripting. Enable to close the legacy-browser residual (a browser that
+    # neither sends Origin nor enforces the cookie's explicit SameSite=Lax).
+    csrf_strict: bool = False
+
     # Comma-separated proxy IPs whose X-Forwarded-For header may be trusted to
     # carry the real client IP. Empty (default) = trust nobody → use the direct
     # transport peer. Set this to your reverse-proxy's IP so the login rate-limit

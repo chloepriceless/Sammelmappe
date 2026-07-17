@@ -6,6 +6,24 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [1.9.0] — 2026-07-17
+
+Sicherheits-Feature: app-weiter CSRF-Schutz als zweite Schicht neben `SameSite=Lax`.
+**335 Tests grün (307 → 335).** Codex-refute't in zwei Runden (Runde 1: 6 Findings,
+davon 4 umgesetzt, 2 als dokumentierte Restrisiken abgelehnt; Runde 2: mergefähig).
+
+### Hinzugefügt
+- **CSRF-Middleware für alle mutierenden Requests** (POST/PUT/PATCH/DELETE):
+  `Sec-Fetch-Site` muss `same-origin`/`none` sein und ein mitgesendeter `Origin`
+  muss zum Request-Host passen — beide Signale werden geprüft, keines überstimmt
+  das andere. Erkennbar cross-site → 403 vor jeder Routen-Logik. Requests ohne
+  Browser-Signale (curl, Scripte) passieren unverändert.
+- **Proxy-robust:** Host-Vergleich ohne scheme (TLS-terminierender Proxy),
+  Default-Port-Normalisierung, `X-Forwarded-Host` zählt nur von Proxys aus
+  `TRUSTED_PROXIES`. Geblockte Requests werden mit Host/XFH-Details geloggt.
+- **Neue Config:** `CSRF_TRUSTED_ORIGINS` (Escape-Hatch für exotische
+  Proxy-Setups) und `CSRF_STRICT` (blockt auch signal-lose Mutationen).
+
 ## [1.8.1] — 2026-07-17
 
 Sicherheits-Release: Dependency-Audit (pip-audit) nach externem Vuln-Hinweis — alle
