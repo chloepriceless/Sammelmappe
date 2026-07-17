@@ -21,3 +21,5 @@ venv/
 # vulnerabilities — keep out of the public repo.
 .planning/RELEASE-REVIEW-*.md
 .planning/*-fix-design.md
+# Hub-Task-Dateien (interne Prozess-Details, Hub pollt lokal)
+.planning/T-*.md
