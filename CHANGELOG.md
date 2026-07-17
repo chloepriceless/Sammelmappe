@@ -6,6 +6,34 @@ Versionierung nach [Semantic Versioning](https://semver.org/lang/de/).
 
 ## [Unreleased]
 
+## [1.10.0] — 2026-07-17
+
+Sicherheits-Feature: Passwortwechsel invalidiert alle anderen Sessions.
+**350 Tests grün (335 → 350).** Codex-refute't in drei Runden (TOCTOU- und
+Lost-Update-Findings aus den Runden 1+2 behoben; Runde 3: mergefähig).
+
+### Hinzugefügt
+- **Session-Epoch:** Jeder Passwortwechsel erhöht einen in der DB geführten
+  Zähler; Session-Tokens tragen die Epoch, mit der sie ausgestellt wurden, und
+  sind nur gültig, solange sie mit dem Zähler übereinstimmt. Eine gestohlene
+  oder vergessene Session auf einem anderen Gerät überlebt einen Passwortwechsel
+  damit nicht mehr (vorher: volle Restlaufzeit von bis zu 30 Tagen). Die Session,
+  die das Passwort ändert, bleibt per frisch ausgestelltem Cookie eingeloggt.
+
+### Sicherheit
+- **Race-fest:** Passwort-Verifikation und Epoch werden in einer Transaktion
+  gelesen und das Token an genau diese Epoch gebunden — ein Login, der gegen den
+  alten Stand autorisiert wurde, kann keine Session für die Zeit nach einer
+  parallelen Rotation erhalten. Alle Passwort/Epoch-Mutationen sind serialisiert
+  (kein Lost Update zwischen konkurrierenden Wechseln).
+- **Fail-closed:** Ein korrupter Epoch-Wert in der DB (auch negativ) macht alle
+  Tokens ungültig statt Alt-Tokens zu reaktivieren; beim nächsten erfolgreichen
+  Login/Passwortwechsel repariert sich der Zähler monoton (Unix-Zeit). Token-
+  Payloads werden streng validiert (Form, `sub`, Epoch-Typ).
+- **Abwärtskompatibel:** Tokens aus der Zeit vor dem Feature zählen als Epoch 0
+  (= DB-Initialwert) — das Deployment selbst loggt niemanden aus, erst der
+  nächste Passwortwechsel.
+
 ## [1.9.0] — 2026-07-17
 
 Sicherheits-Feature: app-weiter CSRF-Schutz als zweite Schicht neben `SameSite=Lax`.

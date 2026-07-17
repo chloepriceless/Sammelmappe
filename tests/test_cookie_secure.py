@@ -15,7 +15,7 @@ def _set_cookie_header(secure: bool) -> str:
     original = settings.cookie_secure
     try:
         settings.cookie_secure = secure
-        return _login_response(Response()).headers.get("set-cookie", "")
+        return _login_response(Response(), epoch=0).headers.get("set-cookie", "")
     finally:
         settings.cookie_secure = original
 

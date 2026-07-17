@@ -25,10 +25,10 @@ def setup(password: str = Form(...), password_confirm: str = Form(...)):
     if password != password_confirm:
         raise HTTPException(status_code=400, detail="Passwörter stimmen nicht überein")
     try:
-        auth.set_password(password)
+        epoch = auth.set_password(password)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return _login_response(RedirectResponse(url="/", status_code=303))
+    return _login_response(RedirectResponse(url="/", status_code=303), epoch)
 
 
 @router.post("/api/auth/login")
@@ -45,10 +45,15 @@ def login(request: Request, password: str = Form(...)):
             detail="Zu viele Fehlversuche. Bitte später erneut versuchen.",
             headers={"Retry-After": str(retry_after)},
         )
-    if not auth.verify_password(password):
+    # Passwort-Check und Epoch-Lesen atomar: das Token wird an exakt die Epoch
+    # gebunden, gegen deren Passwort-Stand verifiziert wurde. Rotiert jemand das
+    # Passwort zwischen Verify und Issue, ist dieses Token sofort ungültig statt
+    # die Rotation zu überleben (Codex-TOCTOU-Finding).
+    ok, epoch = auth.verify_password_for_login(password)
+    if not ok:
         raise HTTPException(status_code=401, detail="Falsches Passwort")
     login_guard.clear(ip)
-    resp = _login_response(RedirectResponse(url="/", status_code=303))
+    resp = _login_response(RedirectResponse(url="/", status_code=303), epoch)
     # Nudge legacy short passwords (set before the MIN_PASSWORD_LENGTH floor) toward an
     # update. Detectable ONLY here — the Argon2 hash doesn't reveal the cleartext length.
     if len(password) < auth.MIN_PASSWORD_LENGTH:
@@ -98,12 +103,17 @@ def change_password(
     if new_password == current_password:
         raise HTTPException(status_code=400, detail="Neues Passwort muss sich vom alten unterscheiden.")
     try:
-        auth.set_password(new_password)  # enforces MIN_PASSWORD_LENGTH
+        epoch = auth.set_password(new_password)  # enforces MIN_PASSWORD_LENGTH
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     login_guard.clear_pw_change(ip)
+    # set_password bumped the session epoch → every existing session token is now
+    # invalid, including the one this request came in with. Re-issue a fresh
+    # cookie bound to the epoch OUR transaction committed, so the session that
+    # CHANGED the password stays logged in; all other sessions (other devices, a
+    # stolen cookie — and a concurrent racing change) are logged out.
+    resp = _login_response(JSONResponse({"ok": True}), epoch)
     # The new password is guaranteed >= MIN_PASSWORD_LENGTH, so clear any stale weak nudge.
-    resp = JSONResponse({"ok": True})
     resp.delete_cookie(WEAK_PW_COOKIE, path="/")
     return resp
 
@@ -115,8 +125,8 @@ def logout():
     return resp
 
 
-def _login_response(resp: Response) -> Response:
-    token, expires = auth.issue_session()
+def _login_response(resp: Response, epoch: int) -> Response:
+    token, expires = auth.issue_session(epoch)
     resp.set_cookie(
         key=auth.SESSION_COOKIE,
         value=token,
